@@ -3,14 +3,27 @@ import {
   getDashboard,
   getTasks,
   getIncidents,
+  getUsageInsights,
+  getSupportRequests,
   acknowledgeIncident as apiAcknowledgeIncident,
   startTask as apiStartTask,
   pauseTask as apiPauseTask,
   resumeTask as apiResumeTask,
   completeTask as apiCompleteTask,
+  createSupportRequest as apiCreateSupportRequest,
+  acknowledgeSupportRequest as apiAcknowledgeSupportRequest,
+  respondSupportRequest as apiRespondSupportRequest,
+  resolveSupportRequest as apiResolveSupportRequest,
+  predictTaskTime as apiPredictTaskTime,
   ApiError,
 } from './client';
-import type { DashboardResponse, Task, Incident } from '../types';
+import type {
+  DashboardResponse,
+  Task,
+  Incident,
+  UsageInsightsResponse,
+  SupportRequest,
+} from '../types';
 import { mockDashboard, mockTasks, mockIncidents } from '../mock/data';
 
 interface UseApiState<T> {
@@ -166,10 +179,101 @@ export function useIncidents(allowMockFallback: boolean = true): UseApiState<Inc
   };
 }
 
+export function useUsageInsights(machineId: string = 'EXC001'): UseApiState<UsageInsightsResponse> {
+  const [data, setData] = useState<UsageInsightsResponse | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isLive, setIsLive] = useState<boolean>(false);
+  const [isBackendUnavailable, setIsBackendUnavailable] = useState<boolean>(false);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await getUsageInsights(machineId);
+      setData(result);
+      setIsLive(true);
+      setIsBackendUnavailable(false);
+      setError(null);
+    } catch (err) {
+      setIsLive(false);
+      const isUnavailable =
+        err instanceof ApiError &&
+        (err.isNetworkError || err.status === 502 || err.status === 504 || err.status === 404);
+      setIsBackendUnavailable(isUnavailable);
+      const errorMessage =
+        err instanceof Error ? err.message : 'Failed to fetch machine usage insights.';
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, [machineId]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  return {
+    data,
+    loading,
+    error,
+    isLive,
+    isBackendUnavailable,
+    refresh: fetchData,
+  };
+}
+
+export function useSupportRequests(statusFilter?: string): UseApiState<SupportRequest[]> {
+  const [data, setData] = useState<SupportRequest[] | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isLive, setIsLive] = useState<boolean>(false);
+  const [isBackendUnavailable, setIsBackendUnavailable] = useState<boolean>(false);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await getSupportRequests(statusFilter);
+      setData(result);
+      setIsLive(true);
+      setIsBackendUnavailable(false);
+      setError(null);
+    } catch (err) {
+      setIsLive(false);
+      const isUnavailable =
+        err instanceof ApiError &&
+        (err.isNetworkError || err.status === 502 || err.status === 504 || err.status === 404);
+      setIsBackendUnavailable(isUnavailable);
+      const errorMessage =
+        err instanceof Error ? err.message : 'Failed to fetch support requests.';
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFilter]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  return {
+    data,
+    loading,
+    error,
+    isLive,
+    isBackendUnavailable,
+    refresh: fetchData,
+  };
+}
+
 export {
   apiAcknowledgeIncident,
   apiStartTask,
   apiPauseTask,
   apiResumeTask,
   apiCompleteTask,
+  apiCreateSupportRequest,
+  apiAcknowledgeSupportRequest,
+  apiRespondSupportRequest,
+  apiResolveSupportRequest,
+  apiPredictTaskTime,
 };

@@ -31,7 +31,7 @@ export const IncidentCard: React.FC<IncidentCardProps> = ({ incident, onAcknowle
     setError(null);
     setAcknowledging(true);
     try {
-      await onAcknowledge(incident.id);
+      await onAcknowledge(String(incident.id));
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to acknowledge incident.';
       setError(msg);

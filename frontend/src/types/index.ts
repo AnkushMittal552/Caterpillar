@@ -29,8 +29,13 @@ export interface Task {
   task_type: string;
   status: TaskStatus;
   planned_minutes: number;
-  predicted_minutes?: number;
+  predicted_minutes?: number | null;
   progress?: number;
+  weather?: string;
+  operator_skill?: string;
+  machine_age?: number;
+  prediction_status?: 'ON_TRACK' | 'AT_RISK' | 'DELAYED' | 'UNAVAILABLE' | string;
+  prediction_basis?: string;
   pause_reason?: string;
   pause_note?: string;
 }
@@ -41,6 +46,7 @@ export interface TelemetrySnapshot {
   load_cycles: number;
   idle_minutes: number;
   seatbelt_status: string;
+  machine_active?: boolean;
 }
 
 export interface DashboardResponse {
@@ -53,12 +59,13 @@ export interface DashboardResponse {
 }
 
 export type IncidentCategory = 'SAFETY' | 'PRODUCTIVITY' | 'TASK' | 'SYSTEM' | string;
-export type IncidentSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'INFO' | string;
+export type IncidentSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO' | string;
 export type IncidentStatus = 'ACTIVE' | 'ACKNOWLEDGED' | 'RESOLVED' | string;
 
 export interface Incident {
-  id: string;
-  type: string;
+  id: string | number;
+  incident_type?: string;
+  type?: string;
   category: IncidentCategory;
   severity: IncidentSeverity;
   title: string;
@@ -77,4 +84,82 @@ export interface ApiState<T> {
   loading: boolean;
   error: string | null;
   isLive: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 Types: Prediction, Usage Insights, and Support Requests
+// ---------------------------------------------------------------------------
+
+export interface TaskPrediction {
+  predicted_minutes: number | null;
+  baseline_estimate: number;
+  difference_minutes: number | null;
+  prediction_status: 'ON_TRACK' | 'AT_RISK' | 'DELAYED' | 'UNAVAILABLE' | string;
+  model: string;
+  data_basis: string;
+}
+
+export interface TaskPredictionPayload {
+  task_type: string;
+  weather: string;
+  operator_skill: string;
+  machine_age: number;
+  baseline_estimate: number;
+}
+
+export interface UsageInsight {
+  type: string;
+  category: string;
+  severity: string;
+  message: string;
+  evidence: Record<string, any>;
+}
+
+export interface UsageInsightsResponse {
+  machine_id: string;
+  generated_at: string;
+  insights: UsageInsight[];
+}
+
+export type SupportRequestType =
+  | 'LOGISTICS'
+  | 'MAINTENANCE'
+  | 'MATERIAL'
+  | 'SUPERVISOR_ASSISTANCE';
+
+export type SupportRequestStatus =
+  | 'OPEN'
+  | 'ACKNOWLEDGED'
+  | 'IN_PROGRESS'
+  | 'RESOLVED';
+
+export interface SupportRequestEvent {
+  id: number;
+  request_id: string;
+  actor_id: string;
+  event_type: 'CREATED' | 'ACKNOWLEDGED' | 'RESPONDED' | 'RESOLVED' | string;
+  message?: string;
+  created_at: string;
+}
+
+export interface SupportRequest {
+  id: string;
+  operator_id: string;
+  machine_id: string;
+  task_id?: string;
+  request_type: SupportRequestType;
+  message: string;
+  status: SupportRequestStatus;
+  created_at: string;
+  updated_at: string;
+  acknowledged_at?: string;
+  resolved_at?: string;
+  latest_response?: string;
+  events: SupportRequestEvent[];
+}
+
+export interface CreateSupportRequestPayload {
+  request_type: SupportRequestType;
+  task_id?: string;
+  message: string;
 }

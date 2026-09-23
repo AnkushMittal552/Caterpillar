@@ -1,4 +1,14 @@
-import type { DashboardResponse, Task, Incident, PauseTaskPayload } from '../types';
+import type {
+  DashboardResponse,
+  Task,
+  Incident,
+  PauseTaskPayload,
+  TaskPrediction,
+  TaskPredictionPayload,
+  UsageInsightsResponse,
+  SupportRequest,
+  CreateSupportRequestPayload,
+} from '../types';
 
 export class ApiError extends Error {
   status?: number;
@@ -81,8 +91,8 @@ export async function getIncidents(): Promise<Incident[]> {
 /**
  * Acknowledge an incident via POST /api/incidents/{id}/acknowledge
  */
-export async function acknowledgeIncident(id: string): Promise<Incident> {
-  return request<Incident>(`/api/incidents/${encodeURIComponent(id)}/acknowledge`, {
+export async function acknowledgeIncident(id: string | number): Promise<Incident> {
+  return request<Incident>(`/api/incidents/${encodeURIComponent(String(id))}/acknowledge`, {
     method: 'POST',
   });
 }
@@ -121,6 +131,73 @@ export async function resumeTask(taskId: string): Promise<Task> {
  */
 export async function completeTask(taskId: string): Promise<Task> {
   return request<Task>(`/api/tasks/${encodeURIComponent(taskId)}/complete`, {
+    method: 'POST',
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 Client API Methods
+// ---------------------------------------------------------------------------
+
+/**
+ * Predict task completion time via POST /api/predict/task-time
+ */
+export async function predictTaskTime(payload: TaskPredictionPayload): Promise<TaskPrediction> {
+  return request<TaskPrediction>('/api/predict/task-time', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Fetch explainable machine usage insights via GET /api/usage-insights
+ */
+export async function getUsageInsights(machineId: string = 'EXC001'): Promise<UsageInsightsResponse> {
+  return request<UsageInsightsResponse>(`/api/usage-insights?machine_id=${encodeURIComponent(machineId)}`);
+}
+
+/**
+ * Fetch operator-supervisor support requests via GET /api/support-requests
+ */
+export async function getSupportRequests(status?: string): Promise<SupportRequest[]> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : '';
+  return request<SupportRequest[]>(`/api/support-requests${query}`);
+}
+
+/**
+ * Submit a new support request via POST /api/support-requests
+ */
+export async function createSupportRequest(payload: CreateSupportRequestPayload): Promise<SupportRequest> {
+  return request<SupportRequest>('/api/support-requests', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Supervisor acknowledges request via POST /api/support-requests/{id}/acknowledge
+ */
+export async function acknowledgeSupportRequest(id: string): Promise<SupportRequest> {
+  return request<SupportRequest>(`/api/support-requests/${encodeURIComponent(id)}/acknowledge`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Supervisor responds to request via POST /api/support-requests/{id}/respond
+ */
+export async function respondSupportRequest(id: string, message: string): Promise<SupportRequest> {
+  return request<SupportRequest>(`/api/support-requests/${encodeURIComponent(id)}/respond`, {
+    method: 'POST',
+    body: JSON.stringify({ message }),
+  });
+}
+
+/**
+ * Supervisor resolves request via POST /api/support-requests/{id}/resolve
+ */
+export async function resolveSupportRequest(id: string): Promise<SupportRequest> {
+  return request<SupportRequest>(`/api/support-requests/${encodeURIComponent(id)}/resolve`, {
     method: 'POST',
   });
 }

@@ -7,20 +7,39 @@ import { LoadingState, ErrorState } from './components/LoadingErrorState';
 import { DashboardPage } from './pages/DashboardPage';
 import { TasksPage } from './pages/TasksPage';
 import { AlertsPage } from './pages/AlertsPage';
+import { TelemetryPage } from './pages/TelemetryPage';
+import { SupervisorPage } from './pages/SupervisorPage';
+import { RequestSupportModal } from './components/RequestSupportModal';
 import {
   useDashboard,
   useTasks,
   useIncidents,
+  useUsageInsights,
+  useSupportRequests,
   apiStartTask,
   apiPauseTask,
   apiResumeTask,
   apiCompleteTask,
   apiAcknowledgeIncident,
+  apiCreateSupportRequest,
+  apiAcknowledgeSupportRequest,
+  apiRespondSupportRequest,
+  apiResolveSupportRequest,
 } from './api/useApi';
-import type { PauseReason } from './types';
+import type { PauseReason, SupportRequestType, TelemetrySnapshot } from './types';
+
+const DEFAULT_TELEMETRY: TelemetrySnapshot = {
+  engine_hours: 1524.8,
+  fuel_used: 3.8,
+  load_cycles: 2,
+  idle_minutes: 55,
+  seatbelt_status: 'Unfastened',
+};
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<NavTabId>('dashboard');
+  const [isSupportModalOpen, setIsSupportModalOpen] = useState<boolean>(false);
+  const [supportModalDefaultTaskId, setSupportModalDefaultTaskId] = useState<string | undefined>(undefined);
 
   const {
     data: dashboardData,
@@ -46,9 +65,23 @@ export const App: React.FC = () => {
     refresh: refreshIncidents,
   } = useIncidents(true);
 
+  const {
+    data: usageInsightsData,
+    loading: usageInsightsLoading,
+    error: usageInsightsError,
+    refresh: refreshUsageInsights,
+  } = useUsageInsights();
+
+  const {
+    data: supportRequestsData,
+    loading: supportRequestsLoading,
+    error: supportRequestsError,
+    refresh: refreshSupportRequests,
+  } = useSupportRequests();
+
   const isLive = dashboardIsLive && tasksIsLive && incidentsIsLive;
   const isLoading = dashboardLoading || tasksLoading || incidentsLoading;
-  const activeError = dashboardError || tasksError || incidentsError;
+  const activeError = dashboardError || tasksError || incidentsError || usageInsightsError || supportRequestsError;
   const hasLoadedData = Boolean(dashboardData || tasksData || incidentsData);
 
   const activeIncidents = (incidentsData || []).filter(
@@ -56,11 +89,18 @@ export const App: React.FC = () => {
   );
   const activeAlertCount = dashboardData?.active_alert_count ?? activeIncidents.length;
 
+  const openSupportRequests = (supportRequestsData || []).filter(
+    (r) => r.status.toUpperCase() !== 'RESOLVED'
+  );
+  const openRequestCount = dashboardData?.open_request_count ?? openSupportRequests.length;
+
   const handleRefreshAll = async () => {
     await Promise.allSettled([
       refreshDashboard(),
       refreshTasks(),
       refreshIncidents(),
+      refreshUsageInsights(),
+      refreshSupportRequests(),
     ]);
   };
 
@@ -91,6 +131,36 @@ export const App: React.FC = () => {
     await Promise.allSettled([refreshIncidents(), refreshDashboard()]);
   };
 
+  // --- Support Request Handlers ---
+  const handleOpenSupportModal = (taskId?: string) => {
+    setSupportModalDefaultTaskId(taskId);
+    setIsSupportModalOpen(true);
+  };
+
+  const handleCreateSupportRequest = async (payload: {
+    request_type: SupportRequestType;
+    task_id?: string;
+    message: string;
+  }) => {
+    await apiCreateSupportRequest(payload);
+    await Promise.allSettled([refreshSupportRequests(), refreshDashboard()]);
+  };
+
+  const handleAcknowledgeSupportRequest = async (id: string) => {
+    await apiAcknowledgeSupportRequest(id);
+    await Promise.allSettled([refreshSupportRequests(), refreshDashboard()]);
+  };
+
+  const handleRespondSupportRequest = async (id: string, message: string) => {
+    await apiRespondSupportRequest(id, message);
+    await Promise.allSettled([refreshSupportRequests(), refreshDashboard()]);
+  };
+
+  const handleResolveSupportRequest = async (id: string) => {
+    await apiResolveSupportRequest(id);
+    await Promise.allSettled([refreshSupportRequests(), refreshDashboard()]);
+  };
+
   return (
     <div className="app-container">
       {/* Heavy Equipment Industrial Header */}
@@ -103,14 +173,15 @@ export const App: React.FC = () => {
         isRefreshing={isLoading}
       />
 
-      {/* Navigation Bar with Dashboard, Tasks, Safety Alerts, and future tabs */}
+      {/* Navigation Bar with Dashboard, Tasks, Safety Alerts, Telemetry, and Supervisor */}
       <Navigation
         currentTab={activeTab}
         onTabChange={setActiveTab}
         activeAlertCount={activeAlertCount}
+        openRequestCount={openRequestCount}
       />
 
-      {/* Backend Connection Status Banner (Never falsy "Live") */}
+      {/* Backend Connection Status Banner */}
       <ConnectionBanner
         isLive={isLive}
         hasLoadedData={hasLoadedData}
@@ -130,6 +201,8 @@ export const App: React.FC = () => {
               activeIncidents={activeIncidents}
               onNavigateToAlerts={() => setActiveTab('alerts')}
               onNavigateToTasks={() => setActiveTab('tasks')}
+              onNavigateToSupervisor={() => setActiveTab('supervisor')}
+              onRequestSupport={() => handleOpenSupportModal(dashboardData.current_task?.task_id)}
             />
           ) : (
             <ErrorState
@@ -148,6 +221,7 @@ export const App: React.FC = () => {
               onCompleteTask={handleCompleteTask}
               onRefresh={refreshTasks}
               isRefreshing={tasksLoading}
+              onRequestSupport={handleOpenSupportModal}
             />
           ) : (
             <ErrorState
@@ -171,8 +245,38 @@ export const App: React.FC = () => {
               onRetry={refreshIncidents}
             />
           )
+        ) : activeTab === 'telemetry' ? (
+          <TelemetryPage
+            telemetry={dashboardData?.telemetry || DEFAULT_TELEMETRY}
+            insights={usageInsightsData?.insights || []}
+            incidents={incidentsData || []}
+            onRefresh={async () => {
+              await Promise.allSettled([refreshUsageInsights(), refreshDashboard()]);
+            }}
+            isRefreshing={usageInsightsLoading}
+          />
+        ) : activeTab === 'supervisor' ? (
+          <SupervisorPage
+            requests={supportRequestsData || []}
+            onAcknowledge={handleAcknowledgeSupportRequest}
+            onRespond={handleRespondSupportRequest}
+            onResolve={handleResolveSupportRequest}
+            onRefresh={async () => {
+              await refreshSupportRequests();
+            }}
+            isRefreshing={supportRequestsLoading}
+          />
         ) : null}
       </main>
+
+      {/* Operator Support Request Modal */}
+      <RequestSupportModal
+        isOpen={isSupportModalOpen}
+        onClose={() => setIsSupportModalOpen(false)}
+        onSubmit={handleCreateSupportRequest}
+        tasks={tasksData || []}
+        defaultTaskId={supportModalDefaultTaskId}
+      />
     </div>
   );
 };

@@ -14,6 +14,8 @@ import {
   Calendar,
   ArrowRight,
   PauseCircle,
+  PlusCircle,
+  TrendingUp,
 } from 'lucide-react';
 
 interface DashboardPageProps {
@@ -21,6 +23,8 @@ interface DashboardPageProps {
   activeIncidents?: Incident[];
   onNavigateToAlerts?: () => void;
   onNavigateToTasks?: () => void;
+  onNavigateToSupervisor?: () => void;
+  onRequestSupport?: () => void;
 }
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({
@@ -28,6 +32,8 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   activeIncidents = [],
   onNavigateToAlerts,
   onNavigateToTasks,
+  onNavigateToSupervisor,
+  onRequestSupport,
 }) => {
   const { operator, machine, current_task, telemetry, active_alert_count, open_request_count } = dashboard;
 
@@ -38,6 +44,22 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     if (!reason) return null;
     return reason.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
   };
+
+  const getPredictionVariance = () => {
+    if (
+      !current_task ||
+      current_task.predicted_minutes === null ||
+      current_task.predicted_minutes === undefined
+    ) {
+      return null;
+    }
+    const diff = roundOneDecimal(current_task.predicted_minutes - current_task.planned_minutes);
+    return diff;
+  };
+
+  const roundOneDecimal = (val: number) => Math.round(val * 10) / 10;
+
+  const variance = getPredictionVariance();
 
   return (
     <div className="dashboard-container">
@@ -150,13 +172,13 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           </div>
         </div>
 
-        {/* 2. CURRENT TASK (Span 8) */}
+        {/* 2. CURRENT TASK & PREDICTION (Span 8) */}
         <div className="col-8">
           <div className="industrial-card" style={{ height: '100%' }}>
             <div className="card-header">
               <span className="card-title">
                 <CheckCircle2 size={18} />
-                <span>2. Current Task</span>
+                <span>2. Current Task & AI Duration Prediction</span>
               </span>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                 {current_task && <StatusBadge status={current_task.status} type="task" />}
@@ -180,7 +202,37 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                       <div className="task-main-name">{current_task.task_type}</div>
                       <span className="task-id-badge">TASK ID: {current_task.task_id}</span>
                     </div>
-                    <StatusBadge status={current_task.status} type="task" />
+                    {current_task.prediction_status && (
+                      <span
+                        style={{
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          padding: '3px 10px',
+                          borderRadius: '4px',
+                          background:
+                            current_task.prediction_status === 'AT_RISK' || current_task.prediction_status === 'DELAYED'
+                              ? 'rgba(239, 68, 68, 0.2)'
+                              : current_task.prediction_status === 'ON_TRACK'
+                              ? 'rgba(16, 185, 129, 0.2)'
+                              : 'rgba(100, 116, 139, 0.2)',
+                          color:
+                            current_task.prediction_status === 'AT_RISK' || current_task.prediction_status === 'DELAYED'
+                              ? '#F87171'
+                              : current_task.prediction_status === 'ON_TRACK'
+                              ? '#34D399'
+                              : '#94A3B8',
+                          border: `1px solid ${
+                            current_task.prediction_status === 'AT_RISK' || current_task.prediction_status === 'DELAYED'
+                              ? '#EF4444'
+                              : current_task.prediction_status === 'ON_TRACK'
+                              ? '#10B981'
+                              : '#64748B'
+                          }`,
+                        }}
+                      >
+                        {current_task.prediction_status.replace(/_/g, ' ')}
+                      </span>
+                    )}
                   </div>
 
                   {/* Paused Reason display if PAUSED */}
@@ -199,17 +251,36 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                     </div>
                   )}
 
+                  {/* Stats Grid including Phase 3 Prediction Metrics */}
                   <div className="task-stats-row">
                     <div className="task-stat-col">
                       <span className="stat-lbl">Planned Duration</span>
                       <span className="stat-val">{current_task.planned_minutes} min</span>
                     </div>
 
-                    {current_task.predicted_minutes !== undefined && (
+                    <div className="task-stat-col">
+                      <span className="stat-lbl">Predicted Duration</span>
+                      <span className="stat-val" style={{ color: 'var(--cat-yellow)' }}>
+                        {current_task.predicted_minutes !== null && current_task.predicted_minutes !== undefined
+                          ? `${current_task.predicted_minutes} min`
+                          : 'Prediction unavailable'}
+                      </span>
+                    </div>
+
+                    {variance !== null && (
                       <div className="task-stat-col">
-                        <span className="stat-lbl">Predicted Duration</span>
-                        <span className="stat-val" style={{ color: 'var(--cat-yellow)' }}>
-                          {current_task.predicted_minutes} min
+                        <span className="stat-lbl">Variance</span>
+                        <span
+                          className="stat-val"
+                          style={{
+                            color: variance > 0 ? '#F87171' : '#34D399',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '2px',
+                          }}
+                        >
+                          <TrendingUp size={14} />
+                          {variance > 0 ? `+${variance}` : variance} min
                         </span>
                       </div>
                     )}
@@ -242,7 +313,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
         {/* METRICS TILES: 4. Active Alerts & 5. Open Requests (Span 4) */}
         <div className="col-4" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          {/* 4. Active Alerts Count - Clickable to navigate to /alerts */}
+          {/* 4. Active Alerts Count */}
           <div
             className={`metric-tile alert-tile ${onNavigateToAlerts ? 'clickable-tile' : ''}`}
             onClick={onNavigateToAlerts}
@@ -258,7 +329,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 {active_alert_count > 0 ? 'Requires operator review' : 'No active alerts'}
               </div>
 
-              {/* Preview top active incidents if present */}
               {activeIncidents.length > 0 && (
                 <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                   {activeIncidents.slice(0, 2).map((inc) => (
@@ -285,8 +355,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             </div>
           </div>
 
-          {/* 5. Open Requests Count */}
-          <div className="metric-tile request-tile">
+          {/* 5. Open Requests Count + Request Support Trigger */}
+          <div
+            className={`metric-tile request-tile ${onNavigateToSupervisor ? 'clickable-tile' : ''}`}
+            onClick={onNavigateToSupervisor}
+            style={{ cursor: 'pointer' }}
+          >
             <div>
               <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 800, letterSpacing: '0.08em', marginBottom: '0.25rem' }}>
                 5. Open Requests
@@ -294,6 +368,29 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
                 Supervisor & dispatch tickets
               </div>
+              {onRequestSupport && (
+                <button
+                  className="btn btn-secondary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRequestSupport();
+                  }}
+                  style={{
+                    marginTop: '0.75rem',
+                    fontSize: '0.75rem',
+                    padding: '4px 10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    backgroundColor: 'rgba(234, 179, 8, 0.1)',
+                    borderColor: 'var(--cat-yellow)',
+                    color: 'var(--cat-yellow)',
+                  }}
+                >
+                  <PlusCircle size={13} />
+                  <span>Request Support</span>
+                </button>
+              )}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <HelpCircle size={28} color="var(--cat-yellow)" />
@@ -316,7 +413,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             </div>
             <div className="card-body">
               <div className="telemetry-grid">
-                {/* Engine Hours */}
                 <div className="telemetry-item">
                   <span className="telemetry-label">
                     <Clock size={14} /> Engine Hours
@@ -327,7 +423,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   </div>
                 </div>
 
-                {/* Fuel Used */}
                 <div className="telemetry-item">
                   <span className="telemetry-label">
                     <Fuel size={14} /> Fuel Used
@@ -338,7 +433,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   </div>
                 </div>
 
-                {/* Load Cycles */}
                 <div className="telemetry-item">
                   <span className="telemetry-label">
                     <Repeat size={14} /> Load Cycles
@@ -349,7 +443,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   </div>
                 </div>
 
-                {/* Idle Time */}
                 <div className="telemetry-item">
                   <span className="telemetry-label">
                     <Clock size={14} /> Idle Time
@@ -360,7 +453,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   </div>
                 </div>
 
-                {/* Seatbelt Status */}
                 <div className="telemetry-item" style={{
                   borderLeft: `4px solid ${seatbeltFastened ? 'var(--status-operational-border)' : 'var(--status-danger-border)'}`
                 }}>
