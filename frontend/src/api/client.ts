@@ -8,6 +8,12 @@ import type {
   UsageInsightsResponse,
   SupportRequest,
   CreateSupportRequestPayload,
+  AssistantResponse,
+  TrainingModule,
+  TrainingModuleDetail,
+  TrainingRecommendation,
+  TrainingSubmitResponse,
+  ShiftHandoverReport,
 } from '../types';
 
 export class ApiError extends Error {
@@ -200,4 +206,63 @@ export async function resolveSupportRequest(id: string): Promise<SupportRequest>
   return request<SupportRequest>(`/api/support-requests/${encodeURIComponent(id)}/resolve`, {
     method: 'POST',
   });
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 Client API Methods
+// ---------------------------------------------------------------------------
+
+/**
+ * Ask the grounded AI operator assistant via POST /api/assistant
+ */
+export async function askAssistant(message: string): Promise<AssistantResponse> {
+  return request<AssistantResponse>('/api/assistant', {
+    method: 'POST',
+    body: JSON.stringify({ message }),
+  });
+}
+
+/**
+ * Fetch available training modules via GET /api/training
+ */
+export async function getTrainingModules(operatorId: string = 'OP1001'): Promise<TrainingModule[]> {
+  return request<TrainingModule[]>(`/api/training?operator_id=${encodeURIComponent(operatorId)}`);
+}
+
+/**
+ * Fetch shift event training recommendations via GET /api/training/recommendations
+ */
+export async function getTrainingRecommendations(operatorId: string = 'OP1001'): Promise<TrainingRecommendation[]> {
+  return request<TrainingRecommendation[]>(`/api/training/recommendations?operator_id=${encodeURIComponent(operatorId)}`);
+}
+
+/**
+ * Fetch module detail and quiz questions via GET /api/training/{module_id}
+ */
+export async function getTrainingModule(moduleId: string, operatorId: string = 'OP1001'): Promise<TrainingModuleDetail> {
+  return request<TrainingModuleDetail>(`/api/training/${encodeURIComponent(moduleId)}?operator_id=${encodeURIComponent(operatorId)}`);
+}
+
+/**
+ * Submit training quiz answers via POST /api/training/{module_id}/submit
+ */
+export async function submitTrainingQuiz(
+  moduleId: string,
+  answers: Record<string, string>,
+  operatorId: string = 'OP1001'
+): Promise<TrainingSubmitResponse> {
+  return request<TrainingSubmitResponse>(`/api/training/${encodeURIComponent(moduleId)}/submit?operator_id=${encodeURIComponent(operatorId)}`, {
+    method: 'POST',
+    body: JSON.stringify({ answers }),
+  });
+}
+
+/**
+ * Fetch shift handover report via GET /api/handover
+ */
+export async function getHandoverReport(
+  machineId: string = 'EXC001',
+  operatorId: string = 'OP1001'
+): Promise<ShiftHandoverReport> {
+  return request<ShiftHandoverReport>(`/api/handover?machine_id=${encodeURIComponent(machineId)}&operator_id=${encodeURIComponent(operatorId)}`);
 }

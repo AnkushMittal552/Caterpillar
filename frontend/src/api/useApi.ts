@@ -15,6 +15,12 @@ import {
   respondSupportRequest as apiRespondSupportRequest,
   resolveSupportRequest as apiResolveSupportRequest,
   predictTaskTime as apiPredictTaskTime,
+  askAssistant as apiAskAssistant,
+  getTrainingModules,
+  getTrainingRecommendations,
+  getTrainingModule as apiGetTrainingModule,
+  submitTrainingQuiz as apiSubmitTrainingQuiz,
+  getHandoverReport as apiGetHandoverReport,
   ApiError,
 } from './client';
 import type {
@@ -23,6 +29,9 @@ import type {
   Incident,
   UsageInsightsResponse,
   SupportRequest,
+  TrainingModule,
+  TrainingRecommendation,
+  ShiftHandoverReport,
 } from '../types';
 import { mockDashboard, mockTasks, mockIncidents } from '../mock/data';
 
@@ -265,6 +274,142 @@ export function useSupportRequests(statusFilter?: string): UseApiState<SupportRe
   };
 }
 
+// ---------------------------------------------------------------------------
+// Phase 4 Hooks: Training & Handover
+// ---------------------------------------------------------------------------
+
+export function useTrainingModules(operatorId: string = 'OP1001'): UseApiState<TrainingModule[]> {
+  const [data, setData] = useState<TrainingModule[] | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isLive, setIsLive] = useState<boolean>(false);
+  const [isBackendUnavailable, setIsBackendUnavailable] = useState<boolean>(false);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await getTrainingModules(operatorId);
+      setData(result);
+      setIsLive(true);
+      setIsBackendUnavailable(false);
+      setError(null);
+    } catch (err) {
+      setIsLive(false);
+      const isUnavailable =
+        err instanceof ApiError &&
+        (err.isNetworkError || err.status === 502 || err.status === 504 || err.status === 404);
+      setIsBackendUnavailable(isUnavailable);
+      const errorMessage =
+        err instanceof Error ? err.message : 'Failed to fetch training modules.';
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, [operatorId]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  return {
+    data,
+    loading,
+    error,
+    isLive,
+    isBackendUnavailable,
+    refresh: fetchData,
+  };
+}
+
+export function useTrainingRecommendations(operatorId: string = 'OP1001'): UseApiState<TrainingRecommendation[]> {
+  const [data, setData] = useState<TrainingRecommendation[] | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isLive, setIsLive] = useState<boolean>(false);
+  const [isBackendUnavailable, setIsBackendUnavailable] = useState<boolean>(false);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await getTrainingRecommendations(operatorId);
+      setData(result);
+      setIsLive(true);
+      setIsBackendUnavailable(false);
+      setError(null);
+    } catch (err) {
+      setIsLive(false);
+      const isUnavailable =
+        err instanceof ApiError &&
+        (err.isNetworkError || err.status === 502 || err.status === 504 || err.status === 404);
+      setIsBackendUnavailable(isUnavailable);
+      const errorMessage =
+        err instanceof Error ? err.message : 'Failed to fetch training recommendations.';
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, [operatorId]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  return {
+    data,
+    loading,
+    error,
+    isLive,
+    isBackendUnavailable,
+    refresh: fetchData,
+  };
+}
+
+export function useHandover(
+  machineId: string = 'EXC001',
+  operatorId: string = 'OP1001'
+): UseApiState<ShiftHandoverReport> {
+  const [data, setData] = useState<ShiftHandoverReport | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isLive, setIsLive] = useState<boolean>(false);
+  const [isBackendUnavailable, setIsBackendUnavailable] = useState<boolean>(false);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await apiGetHandoverReport(machineId, operatorId);
+      setData(result);
+      setIsLive(true);
+      setIsBackendUnavailable(false);
+      setError(null);
+    } catch (err) {
+      setIsLive(false);
+      const isUnavailable =
+        err instanceof ApiError &&
+        (err.isNetworkError || err.status === 502 || err.status === 504 || err.status === 404);
+      setIsBackendUnavailable(isUnavailable);
+      const errorMessage =
+        err instanceof Error ? err.message : 'Failed to fetch shift handover report.';
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, [machineId, operatorId]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  return {
+    data,
+    loading,
+    error,
+    isLive,
+    isBackendUnavailable,
+    refresh: fetchData,
+  };
+}
+
 export {
   apiAcknowledgeIncident,
   apiStartTask,
@@ -276,4 +421,9 @@ export {
   apiRespondSupportRequest,
   apiResolveSupportRequest,
   apiPredictTaskTime,
+  apiAskAssistant,
+  apiGetTrainingModule,
+  apiSubmitTrainingQuiz,
+  apiGetHandoverReport,
 };
+
