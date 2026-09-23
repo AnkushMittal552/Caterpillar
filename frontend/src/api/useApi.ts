@@ -1,7 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getDashboard, getTasks, ApiError } from './client';
-import type { DashboardResponse, Task } from '../types';
-import { mockDashboard, mockTasks } from '../mock/data';
+import {
+  getDashboard,
+  getTasks,
+  getIncidents,
+  acknowledgeIncident as apiAcknowledgeIncident,
+  startTask as apiStartTask,
+  pauseTask as apiPauseTask,
+  resumeTask as apiResumeTask,
+  completeTask as apiCompleteTask,
+  ApiError,
+} from './client';
+import type { DashboardResponse, Task, Incident } from '../types';
+import { mockDashboard, mockTasks, mockIncidents } from '../mock/data';
 
 interface UseApiState<T> {
   data: T | null;
@@ -9,7 +19,7 @@ interface UseApiState<T> {
   error: string | null;
   isLive: boolean;
   isBackendUnavailable: boolean;
-  refresh: () => void;
+  refresh: () => Promise<void>;
 }
 
 export function useDashboard(allowMockFallback: boolean = true): UseApiState<DashboardResponse> {
@@ -21,8 +31,6 @@ export function useDashboard(allowMockFallback: boolean = true): UseApiState<Das
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    setError(null);
-
     try {
       const result = await getDashboard();
       setData(result);
@@ -31,17 +39,17 @@ export function useDashboard(allowMockFallback: boolean = true): UseApiState<Das
       setError(null);
     } catch (err) {
       setIsLive(false);
-      const isUnavailable = err instanceof ApiError && (err.isNetworkError || err.status === 502 || err.status === 504 || err.status === 404);
+      const isUnavailable =
+        err instanceof ApiError &&
+        (err.isNetworkError || err.status === 502 || err.status === 504 || err.status === 404);
       setIsBackendUnavailable(isUnavailable);
-      
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred while fetching dashboard data.';
+
+      const errorMessage =
+        err instanceof Error ? err.message : 'Unknown error occurred while fetching dashboard data.';
       setError(errorMessage);
 
       if (allowMockFallback) {
-        // Fall back to mock data for Phase 1 UI inspection, but isLive remains FALSE
-        setData(mockDashboard);
-      } else {
-        setData(null);
+        setData((prev) => prev ?? mockDashboard);
       }
     } finally {
       setLoading(false);
@@ -71,8 +79,6 @@ export function useTasks(allowMockFallback: boolean = true): UseApiState<Task[]>
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    setError(null);
-
     try {
       const result = await getTasks();
       setData(result);
@@ -81,16 +87,17 @@ export function useTasks(allowMockFallback: boolean = true): UseApiState<Task[]>
       setError(null);
     } catch (err) {
       setIsLive(false);
-      const isUnavailable = err instanceof ApiError && (err.isNetworkError || err.status === 502 || err.status === 504 || err.status === 404);
+      const isUnavailable =
+        err instanceof ApiError &&
+        (err.isNetworkError || err.status === 502 || err.status === 504 || err.status === 404);
       setIsBackendUnavailable(isUnavailable);
 
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred while fetching tasks.';
+      const errorMessage =
+        err instanceof Error ? err.message : 'Unknown error occurred while fetching tasks.';
       setError(errorMessage);
 
       if (allowMockFallback) {
-        setData(mockTasks);
-      } else {
-        setData(null);
+        setData((prev) => prev ?? mockTasks);
       }
     } finally {
       setLoading(false);
@@ -110,3 +117,59 @@ export function useTasks(allowMockFallback: boolean = true): UseApiState<Task[]>
     refresh: fetchData,
   };
 }
+
+export function useIncidents(allowMockFallback: boolean = true): UseApiState<Incident[]> {
+  const [data, setData] = useState<Incident[] | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isLive, setIsLive] = useState<boolean>(false);
+  const [isBackendUnavailable, setIsBackendUnavailable] = useState<boolean>(false);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await getIncidents();
+      setData(result);
+      setIsLive(true);
+      setIsBackendUnavailable(false);
+      setError(null);
+    } catch (err) {
+      setIsLive(false);
+      const isUnavailable =
+        err instanceof ApiError &&
+        (err.isNetworkError || err.status === 502 || err.status === 504 || err.status === 404);
+      setIsBackendUnavailable(isUnavailable);
+
+      const errorMessage =
+        err instanceof Error ? err.message : 'Unknown error occurred while fetching incidents.';
+      setError(errorMessage);
+
+      if (allowMockFallback) {
+        setData((prev) => prev ?? mockIncidents);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [allowMockFallback]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  return {
+    data,
+    loading,
+    error,
+    isLive,
+    isBackendUnavailable,
+    refresh: fetchData,
+  };
+}
+
+export {
+  apiAcknowledgeIncident,
+  apiStartTask,
+  apiPauseTask,
+  apiResumeTask,
+  apiCompleteTask,
+};

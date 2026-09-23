@@ -1,17 +1,22 @@
 import React from 'react';
-import { LayoutDashboard, CheckSquare, AlertTriangle, Activity, Bot, Users, GraduationCap, ArrowRightLeft } from 'lucide-react';
+import { LayoutDashboard, CheckSquare, ShieldAlert, Activity, Bot, Users, GraduationCap, ArrowRightLeft } from 'lucide-react';
 
-export type NavTabId = 'dashboard' | 'tasks';
+export type NavTabId = 'dashboard' | 'tasks' | 'alerts';
 
 interface NavigationProps {
   currentTab: NavTabId;
   onTabChange: (tab: NavTabId) => void;
+  activeAlertCount?: number;
 }
 
-export const Navigation: React.FC<NavigationProps> = ({ currentTab, onTabChange }) => {
+export const Navigation: React.FC<NavigationProps> = ({
+  currentTab,
+  onTabChange,
+  activeAlertCount = 0,
+}) => {
   return (
     <nav className="industrial-nav" aria-label="Main Navigation">
-      {/* Active Phase 1 Tabs */}
+      {/* Active Tabs */}
       <button
         id="nav-dashboard"
         className={`nav-tab ${currentTab === 'dashboard' ? 'active' : ''}`}
@@ -30,17 +35,24 @@ export const Navigation: React.FC<NavigationProps> = ({ currentTab, onTabChange 
         <span>Tasks</span>
       </button>
 
-      {/* Placeholders for Future Phases (Disabled) */}
-      <button className="nav-tab" disabled title="Planned for future phase">
-        <AlertTriangle size={18} />
+      {/* Activated in Phase 2: Safety Alerts */}
+      <button
+        id="nav-alerts"
+        className={`nav-tab ${currentTab === 'alerts' ? 'active' : ''}`}
+        onClick={() => onTabChange('alerts')}
+      >
+        <ShieldAlert size={18} color={activeAlertCount > 0 ? '#EF4444' : undefined} />
         <span>Safety Alerts</span>
-        <span className="badge-tag">Phase 2</span>
+        {activeAlertCount > 0 && (
+          <span className="nav-alert-counter">{activeAlertCount}</span>
+        )}
       </button>
 
+      {/* Placeholders for Future Phases (Disabled) */}
       <button className="nav-tab" disabled title="Planned for future phase">
         <Activity size={18} />
         <span>Telemetry</span>
-        <span className="badge-tag">Phase 2</span>
+        <span className="badge-tag">Phase 2.1</span>
       </button>
 
       <button className="nav-tab" disabled title="Planned for future phase">

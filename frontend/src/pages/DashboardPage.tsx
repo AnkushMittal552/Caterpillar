@@ -1,5 +1,5 @@
 import React from 'react';
-import type { DashboardResponse } from '../types';
+import type { DashboardResponse, Incident } from '../types';
 import { StatusBadge } from '../components/StatusBadge';
 import {
   Gauge,
@@ -12,16 +12,32 @@ import {
   Truck,
   CheckCircle2,
   Calendar,
+  ArrowRight,
+  PauseCircle,
 } from 'lucide-react';
 
 interface DashboardPageProps {
   dashboard: DashboardResponse;
+  activeIncidents?: Incident[];
+  onNavigateToAlerts?: () => void;
+  onNavigateToTasks?: () => void;
 }
 
-export const DashboardPage: React.FC<DashboardPageProps> = ({ dashboard }) => {
+export const DashboardPage: React.FC<DashboardPageProps> = ({
+  dashboard,
+  activeIncidents = [],
+  onNavigateToAlerts,
+  onNavigateToTasks,
+}) => {
   const { operator, machine, current_task, telemetry, active_alert_count, open_request_count } = dashboard;
 
   const seatbeltFastened = telemetry.seatbelt_status.toLowerCase() === 'fastened';
+  const isTaskPaused = current_task?.status.toUpperCase() === 'PAUSED';
+
+  const formatReason = (reason?: string) => {
+    if (!reason) return null;
+    return reason.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+  };
 
   return (
     <div className="dashboard-container">
@@ -142,11 +158,23 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ dashboard }) => {
                 <CheckCircle2 size={18} />
                 <span>2. Current Task</span>
               </span>
-              {current_task && <StatusBadge status={current_task.status} type="task" />}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                {current_task && <StatusBadge status={current_task.status} type="task" />}
+                {onNavigateToTasks && (
+                  <button
+                    className="banner-action-btn"
+                    onClick={onNavigateToTasks}
+                    title="Manage task in Tasks view"
+                  >
+                    <span>Manage</span>
+                    <ArrowRight size={14} />
+                  </button>
+                )}
+              </div>
             </div>
             <div className="card-body">
               {current_task ? (
-                <div className="current-task-box">
+                <div className={`current-task-box ${isTaskPaused ? 'paused-border' : ''}`}>
                   <div className="task-title-row">
                     <div>
                       <div className="task-main-name">{current_task.task_type}</div>
@@ -154,6 +182,22 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ dashboard }) => {
                     </div>
                     <StatusBadge status={current_task.status} type="task" />
                   </div>
+
+                  {/* Paused Reason display if PAUSED */}
+                  {isTaskPaused && (
+                    <div className="pause-reason-callout" style={{ marginTop: '0.75rem' }}>
+                      <PauseCircle size={16} color="var(--cat-yellow)" />
+                      <div>
+                        <strong>PAUSED:</strong>{' '}
+                        <span>{formatReason(current_task.pause_reason) || 'Operational halt'}</span>
+                        {current_task.pause_note && (
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                            "{current_task.pause_note}"
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="task-stats-row">
                     <div className="task-stat-col">
@@ -164,7 +208,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ dashboard }) => {
                     {current_task.predicted_minutes !== undefined && (
                       <div className="task-stat-col">
                         <span className="stat-lbl">Predicted Duration</span>
-                        <span className="stat-val">{current_task.predicted_minutes} min</span>
+                        <span className="stat-val" style={{ color: 'var(--cat-yellow)' }}>
+                          {current_task.predicted_minutes} min
+                        </span>
                       </div>
                     )}
 
@@ -196,19 +242,46 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ dashboard }) => {
 
         {/* METRICS TILES: 4. Active Alerts & 5. Open Requests (Span 4) */}
         <div className="col-4" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          {/* 4. Active Alerts Count */}
-          <div className="metric-tile alert-tile">
+          {/* 4. Active Alerts Count - Clickable to navigate to /alerts */}
+          <div
+            className={`metric-tile alert-tile ${onNavigateToAlerts ? 'clickable-tile' : ''}`}
+            onClick={onNavigateToAlerts}
+            role={onNavigateToAlerts ? 'button' : undefined}
+            tabIndex={onNavigateToAlerts ? 0 : undefined}
+            title={onNavigateToAlerts ? 'Click to view Safety Alerts' : undefined}
+          >
             <div>
               <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 800, letterSpacing: '0.08em', marginBottom: '0.25rem' }}>
                 4. Active Alerts
               </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                Safety & usage notifications
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                {active_alert_count > 0 ? 'Requires operator review' : 'No active alerts'}
               </div>
+
+              {/* Preview top active incidents if present */}
+              {activeIncidents.length > 0 && (
+                <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  {activeIncidents.slice(0, 2).map((inc) => (
+                    <div key={inc.id} style={{ fontSize: '0.78rem', color: 'var(--status-danger-text)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: 'var(--status-danger-border)', display: 'inline-block' }} />
+                      <span style={{ fontWeight: 600 }}>{inc.title}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <ShieldAlert size={28} color={active_alert_count > 0 ? '#EF4444' : '#64748B'} />
-              <div className="metric-number alert">{active_alert_count}</div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.35rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <ShieldAlert size={28} color={active_alert_count > 0 ? '#EF4444' : '#64748B'} />
+                <div className="metric-number alert">{active_alert_count}</div>
+              </div>
+              {onNavigateToAlerts && (
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                  <span>View</span>
+                  <ArrowRight size={12} />
+                </span>
+              )}
             </div>
           </div>
 
@@ -218,7 +291,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ dashboard }) => {
               <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 800, letterSpacing: '0.08em', marginBottom: '0.25rem' }}>
                 5. Open Requests
               </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
                 Supervisor & dispatch tickets
               </div>
             </div>

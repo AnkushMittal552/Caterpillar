@@ -1,4 +1,4 @@
-import type { DashboardResponse, Task } from '../types';
+import type { DashboardResponse, Task, Incident, PauseTaskPayload } from '../types';
 
 export class ApiError extends Error {
   status?: number;
@@ -12,7 +12,7 @@ export class ApiError extends Error {
   }
 }
 
-const DEFAULT_TIMEOUT_MS = 4000;
+const DEFAULT_TIMEOUT_MS = 5000;
 
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const controller = new AbortController();
@@ -69,4 +69,58 @@ export async function getDashboard(): Promise<DashboardResponse> {
  */
 export async function getTasks(): Promise<Task[]> {
   return request<Task[]>('/api/tasks');
+}
+
+/**
+ * Fetch safety and operational incidents from GET /api/incidents
+ */
+export async function getIncidents(): Promise<Incident[]> {
+  return request<Incident[]>('/api/incidents');
+}
+
+/**
+ * Acknowledge an incident via POST /api/incidents/{id}/acknowledge
+ */
+export async function acknowledgeIncident(id: string): Promise<Incident> {
+  return request<Incident>(`/api/incidents/${encodeURIComponent(id)}/acknowledge`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Start a pending task via POST /api/tasks/{task_id}/start
+ */
+export async function startTask(taskId: string): Promise<Task> {
+  return request<Task>(`/api/tasks/${encodeURIComponent(taskId)}/start`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Pause an in-progress task via POST /api/tasks/{task_id}/pause
+ */
+export async function pauseTask(taskId: string, reason: string, note: string = ''): Promise<Task> {
+  const payload: PauseTaskPayload = { reason, note };
+  return request<Task>(`/api/tasks/${encodeURIComponent(taskId)}/pause`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Resume a paused task via POST /api/tasks/{task_id}/resume
+ */
+export async function resumeTask(taskId: string): Promise<Task> {
+  return request<Task>(`/api/tasks/${encodeURIComponent(taskId)}/resume`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Mark a task as completed via POST /api/tasks/{task_id}/complete
+ */
+export async function completeTask(taskId: string): Promise<Task> {
+  return request<Task>(`/api/tasks/${encodeURIComponent(taskId)}/complete`, {
+    method: 'POST',
+  });
 }
