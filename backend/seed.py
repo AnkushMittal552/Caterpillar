@@ -1,4 +1,5 @@
 from sqlalchemy import text
+import json
 from database import SessionLocal, engine, Base
 from models import (
     User,
@@ -9,6 +10,9 @@ from models import (
     TaskPauseEvent,
     SupportRequest,
     SupportRequestEvent,
+    TrainingModule,
+    TrainingQuestion,
+    TrainingAttempt,
     utc_now,
 )
 from services.alert_engine import alert_engine
@@ -175,11 +179,142 @@ def seed_data(db_session=None):
             )
             db_session.add(event001)
 
+        # -------------------------------------------------------------------
+        # Seed Phase 4 Training Modules & Questions
+        # -------------------------------------------------------------------
+        initial_modules = [
+            {
+                "id": "MOD_SEATBELT",
+                "title": "Seatbelt Awareness",
+                "description": "Essential safety protocols regarding continuous three-point harness use during equipment operation.",
+                "category": "SAFETY",
+                "estimated_minutes": 5,
+                "questions": [
+                    {
+                        "id": "Q_SB_1",
+                        "question": "When must an operator fasten their seatbelt in construction machinery?",
+                        "choices": [
+                            {"key": "A", "text": "Only when driving on public access roads"},
+                            {"key": "B", "text": "At all times while the engine is running or machine is active"},
+                            {"key": "C", "text": "Only during high-speed trenching operations"},
+                            {"key": "D", "text": "Whenever requested by ground personnel"},
+                        ],
+                        "correct_answer": "B",
+                        "explanation": "Standard heavy equipment safety policy requires seatbelts fastened whenever the machine is operating to prevent rollover ejections.",
+                    },
+                    {
+                        "id": "Q_SB_2",
+                        "question": "What is the primary function of the ROPS (Rollover Protective Structure) in conjunction with a seatbelt?",
+                        "choices": [
+                            {"key": "A", "text": "To protect the operator inside the structural survival space"},
+                            {"key": "B", "text": "To increase cab insulation against noise"},
+                            {"key": "C", "text": "To allow easy egress during machine movement"},
+                            {"key": "D", "text": "To balance machine counterweight"},
+                        ],
+                        "correct_answer": "A",
+                        "explanation": "ROPS can only protect the operator if the seatbelt keeps them securely inside the reinforced cab survival envelope.",
+                    },
+                ],
+            },
+            {
+                "id": "MOD_PROXIMITY",
+                "title": "Proximity Awareness",
+                "description": "Ground personnel separation, swing-radius boundary management, and spotter communication.",
+                "category": "SAFETY",
+                "estimated_minutes": 5,
+                "questions": [
+                    {
+                        "id": "Q_PX_1",
+                        "question": "What should an operator do if ground personnel enter the excavator swing radius?",
+                        "choices": [
+                            {"key": "A", "text": "Sound the horn and continue digging"},
+                            {"key": "B", "text": "Halt motion immediately and make eye contact"},
+                            {"key": "C", "text": "Increase swing speed to finish the cycle quickly"},
+                            {"key": "D", "text": "Swing to the opposite side without stopping"},
+                        ],
+                        "correct_answer": "B",
+                        "explanation": "Immediate cessation of swing/boom motion prevents blind-spot collisions with ground workers.",
+                    },
+                    {
+                        "id": "Q_PX_2",
+                        "question": "When is a dedicated spotter required on site?",
+                        "choices": [
+                            {"key": "A", "text": "Only during night shifts"},
+                            {"key": "B", "text": "Whenever working near utilities, tight spaces, or blind zones"},
+                            {"key": "C", "text": "Never on earth excavation tasks"},
+                            {"key": "D", "text": "Only when the machine is brand new"},
+                        ],
+                        "correct_answer": "B",
+                        "explanation": "Spotters provide critical guidance when vision is obstructed or proximity to hazards is high.",
+                    },
+                ],
+            },
+            {
+                "id": "MOD_IDLE",
+                "title": "Understanding Idle Time",
+                "description": "Optimizing cycle efficiency, lowering unnecessary fuel burn, and utilizing auto-idle features.",
+                "category": "PRODUCTIVITY",
+                "estimated_minutes": 5,
+                "questions": [
+                    {
+                        "id": "Q_ID_1",
+                        "question": "What is a recommended practice if haul truck queue time exceeds 5 minutes?",
+                        "choices": [
+                            {"key": "A", "text": "Keep engine at maximum throttle"},
+                            {"key": "B", "text": "Switch machine to auto-idle or shut down engine"},
+                            {"key": "C", "text": "Continuously cycle the bucket empty"},
+                            {"key": "D", "text": "Disable telematics monitoring"},
+                        ],
+                        "correct_answer": "B",
+                        "explanation": "Shutting down or utilizing auto-idle significantly reduces fuel burn and unnecessary machine hours.",
+                    },
+                    {
+                        "id": "Q_ID_2",
+                        "question": "How does excessive machine idling directly impact operating metrics?",
+                        "choices": [
+                            {"key": "A", "text": "It improves hydraulic fluid lifespan"},
+                            {"key": "B", "text": "It burns fuel with zero productive payload cycles and skews service intervals"},
+                            {"key": "C", "text": "It increases load cycle count automatically"},
+                            {"key": "D", "text": "It has no impact on operating costs"},
+                        ],
+                        "correct_answer": "B",
+                        "explanation": "Idling wastes fuel, increases carbon emissions, and accrues maintenance engine hours without completing work.",
+                    },
+                ],
+            },
+        ]
+
+        for mod_data in initial_modules:
+            existing_mod = db_session.query(TrainingModule).filter(TrainingModule.id == mod_data["id"]).first()
+            if not existing_mod:
+                new_mod = TrainingModule(
+                    id=mod_data["id"],
+                    title=mod_data["title"],
+                    description=mod_data["description"],
+                    category=mod_data["category"],
+                    estimated_minutes=mod_data["estimated_minutes"],
+                    active=True,
+                )
+                db_session.add(new_mod)
+
+            for q_data in mod_data["questions"]:
+                existing_q = db_session.query(TrainingQuestion).filter(TrainingQuestion.id == q_data["id"]).first()
+                if not existing_q:
+                    new_q = TrainingQuestion(
+                        id=q_data["id"],
+                        module_id=mod_data["id"],
+                        question=q_data["question"],
+                        choices_json=json.dumps(q_data["choices"]),
+                        correct_answer=q_data["correct_answer"],
+                        explanation=q_data["explanation"],
+                    )
+                    db_session.add(new_q)
+
         db_session.commit()
 
         # Run alert evaluation on seeded state
         alert_engine.evaluate_machine_alerts(db_session, "EXC001")
-        print("Database seeded with Phase 3 models, predictions, and initial alerts evaluated successfully.")
+        print("Database seeded with Phase 4 models, modules, questions, and initial alerts evaluated successfully.")
     finally:
         if close_after:
             db_session.close()

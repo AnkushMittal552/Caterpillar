@@ -119,3 +119,43 @@ class SupportRequestEvent(Base):
     event_type = Column(String, nullable=False)  # CREATED, ACKNOWLEDGED, RESPONDED, RESOLVED
     message = Column(String, nullable=True)
     created_at = Column(DateTime, default=utc_now, nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Models: Training Modules, Questions, and Attempts
+# ---------------------------------------------------------------------------
+
+
+class TrainingModule(Base):
+    __tablename__ = "training_modules"
+
+    id = Column(String, primary_key=True, index=True)  # e.g., MOD_SEATBELT
+    title = Column(String, nullable=False)
+    description = Column(String, nullable=False)
+    category = Column(String, nullable=False, default="SAFETY")  # SAFETY, PRODUCTIVITY
+    estimated_minutes = Column(Integer, nullable=False, default=5)
+    active = Column(Boolean, default=True, nullable=False)
+
+
+class TrainingQuestion(Base):
+    __tablename__ = "training_questions"
+
+    id = Column(String, primary_key=True, index=True)  # e.g., Q_SB_1
+    module_id = Column(String, nullable=False, index=True)
+    question = Column(String, nullable=False)
+    choices_json = Column(String, nullable=False)  # JSON array: [{"key": "A", "text": "..."}]
+    correct_answer = Column(String, nullable=False)  # "A", "B", etc.
+    explanation = Column(String, nullable=False)
+
+
+class TrainingAttempt(Base):
+    __tablename__ = "training_attempts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    operator_id = Column(String, nullable=False, index=True)
+    module_id = Column(String, nullable=False, index=True)
+    score = Column(Integer, nullable=False)
+    total_questions = Column(Integer, nullable=False)
+    completed = Column(Boolean, default=True, nullable=False)
+    completed_at = Column(DateTime, default=utc_now, nullable=False)
+

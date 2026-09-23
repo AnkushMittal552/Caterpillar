@@ -30,11 +30,22 @@ from schemas import (
     RespondSupportRequestPayload,
     SupportRequestSchema,
     SupportRequestEventSchema,
+    AssistantMessageRequest,
+    AssistantMessageResponse,
+    TrainingModuleSchema,
+    TrainingModuleDetailSchema,
+    TrainingRecommendation,
+    TrainingSubmitRequest,
+    TrainingSubmitResponse,
+    ShiftHandoverResponse,
 )
 from seed import seed_data
 from services.alert_engine import alert_engine, parse_incident
 from services.prediction_service import prediction_service
 from services.usage_insights import usage_insights_service
+from services.assistant_service import assistant_service
+from services.training_service import training_service
+from services.handover_service import handover_service
 
 
 @asynccontextmanager
@@ -47,8 +58,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="ShiftMate API",
-    description="Caterpillar Smart Operator Assistant - Phase 3 Backend",
-    version="3.0.0",
+    description="Caterpillar Smart Operator Assistant - Phase 4 Backend",
+    version="4.0.0",
     lifespan=lifespan,
 )
 
@@ -568,3 +579,90 @@ def resolve_support_request(request_id: str, db: Session = Depends(get_db)):
     db.refresh(req)
 
     return serialize_support_request(req, db)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Routes: Grounded AI Assistant
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/assistant", response_model=AssistantMessageResponse)
+def ask_assistant(
+    payload: AssistantMessageRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    State-grounded AI operator assistant.
+    Answers operator questions using controlled backend queries,
+    proposes action workflows requiring explicit confirmation,
+    and defaults to deterministic fallback answers when external LLMs are unavailable.
+    """
+    if not payload.message or not payload.message.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+    return assistant_service.ask(db, payload.message.strip())
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Routes: Contextual Training Hub & Quizzes
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/training", response_model=List[TrainingModuleSchema])
+def list_training_modules(
+    operator_id: str = Query("OP1001"),
+    db: Session = Depends(get_db),
+):
+    """List available training modules with completion status for the operator."""
+    return training_service.get_modules(db, operator_id=operator_id)
+
+
+@app.get("/api/training/recommendations", response_model=List[TrainingRecommendation])
+def list_training_recommendations(
+    operator_id: str = Query("OP1001"),
+    db: Session = Depends(get_db),
+):
+    """Return deterministic training recommendations triggered by current shift events."""
+    return training_service.get_recommendations(db, operator_id=operator_id)
+
+
+@app.get("/api/training/{module_id}", response_model=TrainingModuleDetailSchema)
+def get_training_module_detail(
+    module_id: str,
+    operator_id: str = Query("OP1001"),
+    db: Session = Depends(get_db),
+):
+    """Get training module educational content and quiz questions."""
+    detail = training_service.get_module_detail(db, module_id, operator_id=operator_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Training module not found")
+    return detail
+
+
+@app.post("/api/training/{module_id}/submit", response_model=TrainingSubmitResponse)
+def submit_training_quiz(
+    module_id: str,
+    payload: TrainingSubmitRequest,
+    operator_id: str = Query("OP1001"),
+    db: Session = Depends(get_db),
+):
+    """Evaluate training quiz answers, calculate authoritative score, and persist completion."""
+    try:
+        return training_service.submit_quiz(db, module_id, operator_id=operator_id, answers=payload.answers)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Routes: Automatic Shift Handover
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/handover", response_model=ShiftHandoverResponse)
+def get_shift_handover(
+    machine_id: str = Query("EXC001"),
+    operator_id: str = Query("OP1001"),
+    db: Session = Depends(get_db),
+):
+    """Generate comprehensive, factual shift handover facts and summary from database records."""
+    return handover_service.get_handover_report(db, machine_id=machine_id, operator_id=operator_id)
+
