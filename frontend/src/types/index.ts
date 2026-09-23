@@ -297,3 +297,79 @@ export interface ShiftHandoverReport {
   summary_text: string;
 }
 
+// ---------------------------------------------------------------------------
+// Phase 5 Types: Real-Time, Roles, Audit Trail, Notifications & Demo
+// ---------------------------------------------------------------------------
+
+export type UserRole = 'OPERATOR' | 'SUPERVISOR';
+
+export type ConnectionStatus = 'CONNECTED' | 'RECONNECTING' | 'DISCONNECTED';
+
+export interface AuditEvent {
+  id: number;
+  actor_id: string;
+  actor_role: string;
+  action: string;
+  entity_type: string;
+  entity_id: string;
+  timestamp: string;
+  details?: Record<string, unknown> | string | null;
+}
+
+export interface NotificationItem {
+  id: string;
+  category: 'SAFETY' | 'PRODUCTIVITY' | 'TASK' | 'SUPPORT' | 'TRAINING' | 'SYSTEM' | string;
+  priority: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'INFO' | string;
+  title: string;
+  message: string;
+  created_at: string;
+  read: boolean;
+  reference_type?: string | null;
+  reference_id?: string | null;
+}
+
+export interface KPISummary {
+  shift_name: string;
+  operator_id: string;
+  machine_id: string;
+  machine_status: string;
+  engine_hours: number;
+  fuel_used: number;
+  load_cycles: number;
+  idle_minutes: number;
+  tasks_total: number;
+  tasks_completed: number;
+  tasks_in_progress: number;
+  tasks_paused: number;
+  tasks_pending: number;
+  active_alerts_count: number;
+  resolved_alerts_count: number;
+  open_requests_count: number;
+  resolved_requests_count: number;
+  training_completed_count: number;
+  training_recommended_count: number;
+}
+
+export interface DemoScenarioResponse {
+  scenario: string;
+  status: string;
+  message: string;
+  task_id?: string;
+  request_id?: string;
+  incidents_count?: number;
+}
+
+export interface DemoResetResponse {
+  status: string;
+  operator: string;
+  machine: string;
+  current_task: string;
+  tasks_count: number;
+  telemetry: {
+    engine_hours: number;
+    idle_minutes: number;
+    seatbelt_status: string;
+  };
+  message: string;
+}
+

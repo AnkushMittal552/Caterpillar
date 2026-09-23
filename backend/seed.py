@@ -13,6 +13,8 @@ from models import (
     TrainingModule,
     TrainingQuestion,
     TrainingAttempt,
+    AuditEvent,
+    Notification,
     utc_now,
 )
 from services.alert_engine import alert_engine
@@ -120,6 +122,8 @@ def seed_data(db_session=None):
                 )
                 db_session.add(task_obj)
             else:
+                existing.status = t["status"]
+                existing.progress = t["progress"]
                 existing.weather = t["weather"]
                 existing.operator_skill = t["operator_skill"]
                 existing.machine_age = t["machine_age"]
@@ -152,8 +156,12 @@ def seed_data(db_session=None):
             )
             db_session.add(telemetry)
         else:
-            if existing_telemetry.machine_active is None:
-                existing_telemetry.machine_active = True
+            existing_telemetry.engine_hours = 1524.8
+            existing_telemetry.fuel_used = 3.8
+            existing_telemetry.load_cycles = 2
+            existing_telemetry.idle_minutes = 55
+            existing_telemetry.seatbelt_status = "Unfastened"
+            existing_telemetry.machine_active = True
 
         # Seed Initial Demo Support Request R001 if not exists
         if not db_session.query(SupportRequest).filter(SupportRequest.id == "R001").first():
@@ -310,11 +318,39 @@ def seed_data(db_session=None):
                     )
                     db_session.add(new_q)
 
+        # Seed initial notification if empty
+        if db_session.query(Notification).count() == 0:
+            welcome_notif = Notification(
+                id="NOTIF-0001",
+                category="SYSTEM",
+                priority="INFO",
+                title="ShiftMate Session Initialized",
+                message="Deterministic baseline loaded. Machine EXC001 operational.",
+                created_at=utc_now(),
+                read=False,
+                reference_type="machine",
+                reference_id="EXC001",
+            )
+            db_session.add(welcome_notif)
+
+        # Seed initial audit event if empty
+        if db_session.query(AuditEvent).count() == 0:
+            init_audit = AuditEvent(
+                actor_id="SYSTEM",
+                actor_role="SYSTEM",
+                action="SYSTEM_INITIALIZED",
+                entity_type="SYSTEM",
+                entity_id="EXC001",
+                timestamp=utc_now(),
+                details="ShiftMate Phase 5 system initialization.",
+            )
+            db_session.add(init_audit)
+
         db_session.commit()
 
         # Run alert evaluation on seeded state
         alert_engine.evaluate_machine_alerts(db_session, "EXC001")
-        print("Database seeded with Phase 4 models, modules, questions, and initial alerts evaluated successfully.")
+        print("Database seeded with Phase 5 models, audit trail, notifications, modules, questions, and initial alerts evaluated successfully.")
     finally:
         if close_after:
             db_session.close()

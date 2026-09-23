@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 from enum import Enum
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -143,10 +143,14 @@ class SupportRequestType(str, Enum):
     MAINTENANCE = "MAINTENANCE"
     MATERIAL = "MATERIAL"
     SUPERVISOR_ASSISTANCE = "SUPERVISOR_ASSISTANCE"
+    TRUCK_DISPATCH = "TRUCK_DISPATCH"
+    PARTS_DELIVERY = "PARTS_DELIVERY"
+    MACHINE_INSPECTION = "MACHINE_INSPECTION"
+    SAFETY_HAZARD = "SAFETY_HAZARD"
 
 
 class CreateSupportRequestPayload(BaseModel):
-    request_type: SupportRequestType
+    request_type: Union[SupportRequestType, str]
     task_id: Optional[str] = None
     message: str
 
@@ -290,4 +294,76 @@ class ShiftHandoverResponse(BaseModel):
     training: ShiftHandoverTrainingBreakdown
     usage_insights: List[UsageInsight] = Field(default_factory=list)
     summary_text: str
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 Schemas: Audit Trail, Notifications, Demo Controller, & KPIs
+# ---------------------------------------------------------------------------
+
+
+class AuditEventSchema(BaseModel):
+    id: int
+    actor_id: str
+    actor_role: str
+    action: str
+    entity_type: str
+    entity_id: str
+    timestamp: datetime
+    details: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class NotificationSchema(BaseModel):
+    id: str
+    category: str
+    priority: str
+    title: str
+    message: str
+    created_at: datetime
+    read: bool
+    reference_type: Optional[str] = None
+    reference_id: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class NotificationReadResponse(BaseModel):
+    id: str
+    read: bool
+
+
+class NotificationReadAllResponse(BaseModel):
+    marked_count: int
+
+
+class DemoScenarioResponse(BaseModel):
+    scenario: str
+    status: str
+    message: Optional[str] = None
+    incidents_count: Optional[int] = None
+    request_id: Optional[str] = None
+    task_id: Optional[str] = None
+
+
+class DemoResetResponse(BaseModel):
+    status: str
+    operator: str
+    machine: str
+    current_task: str
+    tasks_count: int
+    telemetry: Dict[str, Any]
+    message: str
+
+
+class KPISummaryResponse(BaseModel):
+    tasks_completed: int
+    tasks_remaining: int
+    tasks_at_risk: int
+    recorded_idle_minutes: float
+    unresolved_incidents: int
+    support_requests_open: int
+    support_requests_resolved: int
+    training_modules_completed: int
+
 

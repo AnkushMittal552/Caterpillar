@@ -14,6 +14,12 @@ import type {
   TrainingRecommendation,
   TrainingSubmitResponse,
   ShiftHandoverReport,
+  UserRole,
+  AuditEvent,
+  NotificationItem,
+  KPISummary,
+  DemoScenarioResponse,
+  DemoResetResponse,
 } from '../types';
 
 export class ApiError extends Error {
@@ -25,6 +31,23 @@ export class ApiError extends Error {
     this.name = 'ApiError';
     this.status = status;
     this.isNetworkError = isNetworkError;
+  }
+}
+
+// Global active role management
+let activeRole: UserRole = (localStorage.getItem('shiftmate_role') as UserRole) || 'OPERATOR';
+
+export function getActiveRole(): UserRole {
+  return activeRole;
+}
+
+export function setActiveRole(role: UserRole): void {
+  activeRole = role;
+  try {
+    localStorage.setItem('shiftmate_role', role);
+    window.dispatchEvent(new CustomEvent('shiftmate-role-changed', { detail: role }));
+  } catch {
+    // ignore local storage error
   }
 }
 
@@ -41,6 +64,7 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
+        'X-Role': activeRole,
         ...options?.headers,
       },
     });
@@ -266,3 +290,74 @@ export async function getHandoverReport(
 ): Promise<ShiftHandoverReport> {
   return request<ShiftHandoverReport>(`/api/handover?machine_id=${encodeURIComponent(machineId)}&operator_id=${encodeURIComponent(operatorId)}`);
 }
+
+// ---------------------------------------------------------------------------
+// Phase 5 Client API Methods: Real-Time, Audit, Notifications, Demo & KPIs
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch traceable audit events via GET /api/audit
+ */
+export async function getAuditTrail(params?: {
+  entity_type?: string;
+  actor_id?: string;
+  limit?: number;
+}): Promise<AuditEvent[]> {
+  const queryParts: string[] = [];
+  if (params?.entity_type) queryParts.push(`entity_type=${encodeURIComponent(params.entity_type)}`);
+  if (params?.actor_id) queryParts.push(`actor_id=${encodeURIComponent(params.actor_id)}`);
+  if (params?.limit) queryParts.push(`limit=${params.limit}`);
+  const qs = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
+  return request<AuditEvent[]>(`/api/audit${qs}`);
+}
+
+/**
+ * Fetch unified notifications via GET /api/notifications
+ */
+export async function getNotifications(limit: number = 50): Promise<NotificationItem[]> {
+  return request<NotificationItem[]>(`/api/notifications?limit=${limit}`);
+}
+
+/**
+ * Mark a notification as read via POST /api/notifications/{id}/read
+ */
+export async function markNotificationRead(id: string): Promise<{ id: string; read: boolean }> {
+  return request<{ id: string; read: boolean }>(`/api/notifications/${encodeURIComponent(id)}/read`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Mark all notifications as read via POST /api/notifications/read-all
+ */
+export async function markAllNotificationsRead(): Promise<{ message: string; marked_count: number }> {
+  return request<{ message: string; marked_count: number }>('/api/notifications/read-all', {
+    method: 'POST',
+  });
+}
+
+/**
+ * Trigger named demo scenario via POST /api/demo/scenario/{scenario_name}
+ */
+export async function triggerDemoScenario(scenarioName: string): Promise<DemoScenarioResponse> {
+  return request<DemoScenarioResponse>(`/api/demo/scenario/${encodeURIComponent(scenarioName)}`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * Deterministic Demo Reset via POST /api/demo/reset
+ */
+export async function resetDemo(): Promise<DemoResetResponse> {
+  return request<DemoResetResponse>('/api/demo/reset', {
+    method: 'POST',
+  });
+}
+
+/**
+ * Fetch factual shift KPI summary via GET /api/kpi/summary
+ */
+export async function getKpiSummary(): Promise<KPISummary> {
+  return request<KPISummary>('/api/kpi/summary');
+}
+

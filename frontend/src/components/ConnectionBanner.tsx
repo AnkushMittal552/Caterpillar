@@ -1,5 +1,5 @@
-import React from 'react';
-import { WifiOff, Wifi, RefreshCw } from 'lucide-react';
+import { WifiOff, RefreshCw, AlertTriangle } from 'lucide-react';
+import { useConnectionStatus } from '../api/useApi';
 
 interface ConnectionBannerProps {
   isLive: boolean;
@@ -16,16 +16,43 @@ export const ConnectionBanner: React.FC<ConnectionBannerProps> = ({
   onRetry,
   isLoading,
 }) => {
-  if (isLive) {
+  const wsStatus = useConnectionStatus();
+
+  if (isLive && wsStatus === 'CONNECTED') {
+    return null; // Keep screen clean when 100% healthy and connected
+  }
+
+  if (isLive && wsStatus === 'RECONNECTING') {
     return (
-      <div className="industrial-banner banner-live" role="status">
+      <div className="industrial-banner banner-reconnecting" role="status">
         <div className="banner-content">
-          <Wifi size={18} color="#10B981" />
+          <RefreshCw size={18} className="animate-spin text-cat-yellow" />
           <div>
-            <strong>LIVE BACKEND CONNECTED</strong> — Receiving real-time telemetry, task updates, and incidents from{' '}
-            <code style={{ fontFamily: 'var(--font-mono)' }}>/api</code>.
+            <strong>REAL-TIME SYNC RECONNECTING</strong> — Re-establishing WebSocket link to machinery stream. HTTP fallback active.
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (isLive && wsStatus === 'DISCONNECTED') {
+    return (
+      <div className="industrial-banner banner-warning" role="status">
+        <div className="banner-content">
+          <AlertTriangle size={18} color="#F59E0B" />
+          <div>
+            <strong>REAL-TIME FEED PAUSED</strong> — Real-time event gateway is currently disconnected. State updates remain queryable via manual Sync.
+          </div>
+        </div>
+        <button
+          className="banner-action-btn"
+          onClick={onRetry}
+          disabled={isLoading}
+          title="Refresh connection"
+        >
+          <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+          <span>Sync Now</span>
+        </button>
       </div>
     );
   }
@@ -37,7 +64,7 @@ export const ConnectionBanner: React.FC<ConnectionBannerProps> = ({
         <div>
           <strong>BACKEND UNAVAILABLE</strong> —{' '}
           {hasLoadedData
-            ? 'Displaying last loaded data. The backend at /api is currently unreachable.'
+            ? 'Displaying last loaded snapshot. Backend at /api is unreachable; live updates paused.'
             : (error || 'Backend service is not reachable at /api. Displaying fallback dataset.')}
         </div>
       </div>

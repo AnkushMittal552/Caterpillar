@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { wsClient } from './api/websocket';
 import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
 import type { NavTabId } from './components/Navigation';
@@ -115,6 +116,32 @@ export const App: React.FC = () => {
     ]);
   };
 
+  // Real-time WebSocket event subscription
+  useEffect(() => {
+    wsClient.connect();
+
+    const unsubAll = wsClient.on('*', (evt) => {
+      if (evt.event_type.startsWith('TASK_')) {
+        refreshTasks();
+        refreshDashboard();
+      } else if (evt.event_type.startsWith('INCIDENT_')) {
+        refreshIncidents();
+        refreshDashboard();
+      } else if (evt.event_type.startsWith('REQUEST_')) {
+        refreshSupportRequests();
+        refreshDashboard();
+      } else if (evt.event_type.startsWith('TELEMETRY_')) {
+        refreshDashboard();
+      } else if (evt.event_type.startsWith('TRAINING_')) {
+        refreshTrainingRecs();
+      }
+    });
+
+    return () => {
+      unsubAll();
+    };
+  }, [refreshTasks, refreshDashboard, refreshIncidents, refreshSupportRequests, refreshTrainingRecs]);
+
   // --- Task Workflow Handlers ---
   const handleStartTask = async (taskId: string) => {
     await apiStartTask(taskId);
@@ -211,6 +238,7 @@ export const App: React.FC = () => {
             <DashboardPage
               dashboard={dashboardData}
               activeIncidents={activeIncidents}
+              onRefresh={handleRefreshAll}
               onNavigateToAlerts={() => setActiveTab('alerts')}
               onNavigateToTasks={() => setActiveTab('tasks')}
               onNavigateToSupervisor={() => setActiveTab('supervisor')}

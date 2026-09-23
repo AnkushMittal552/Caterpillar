@@ -184,6 +184,18 @@ class AssistantService:
                     proposed_action=proposed,
                 )
 
+        # 1b. Question: "What is my current task?" / "Current task"
+        if ("current task" in msg or "my task" in msg or "active task" in msg) and "delay" not in msg and "why" not in msg:
+            if not current_task:
+                return AssistantMessageResponse(
+                    answer="There is no active task currently in progress.",
+                    references=[],
+                )
+            return AssistantMessageResponse(
+                answer=f"Your current active task is {current_task.task_id}: {current_task.task_type} (Status: {current_task.status}, Progress: {current_task.progress}%).",
+                references=[ReferenceItem(type="task", id=current_task.task_id, label=f"Active Task: {current_task.task_type}")],
+            )
+
         # 2. Question: "Why is my current task delayed?"
         if "delayed" in msg or "why" in msg and ("task" in msg or "delay" in msg):
             if not current_task:

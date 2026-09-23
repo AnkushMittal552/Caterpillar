@@ -21,10 +21,13 @@ import {
   ArrowRightLeft,
   Sparkles,
 } from 'lucide-react';
+import { DemoController } from '../components/DemoController';
+import { useKpiSummary } from '../api/useApi';
 
 interface DashboardPageProps {
   dashboard: DashboardResponse;
   activeIncidents?: Incident[];
+  onRefresh?: () => void;
   onNavigateToAlerts?: () => void;
   onNavigateToTasks?: () => void;
   onNavigateToSupervisor?: () => void;
@@ -38,6 +41,7 @@ interface DashboardPageProps {
 export const DashboardPage: React.FC<DashboardPageProps> = ({
   dashboard,
   activeIncidents = [],
+  onRefresh,
   onNavigateToAlerts,
   onNavigateToTasks,
   onNavigateToSupervisor,
@@ -47,6 +51,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   onNavigateToHandover,
   trainingRecCount = 0,
 }) => {
+  const { data: kpi, refresh: refreshKpi } = useKpiSummary();
   const { operator, machine, current_task, telemetry, active_alert_count, open_request_count } = dashboard;
 
   const seatbeltFastened = telemetry.seatbelt_status.toLowerCase() === 'fastened';
@@ -73,8 +78,62 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 
   const variance = getPredictionVariance();
 
+  const handleScenarioChange = () => {
+    if (onRefresh) onRefresh();
+    refreshKpi();
+  };
+
   return (
     <div className="dashboard-container">
+      {/* Interactive Phase 5 Demo Scenario Controller */}
+      <DemoController onScenarioApplied={handleScenarioChange} />
+
+      {/* Factual Shift KPI Summary Strip */}
+      <div className="kpi-summary-strip">
+        <div className="kpi-strip-item">
+          <span className="kpi-strip-label">Engine Hours</span>
+          <span className="kpi-strip-val">{kpi ? `${kpi.engine_hours}h` : `${telemetry.engine_hours}h`}</span>
+        </div>
+        <div className="kpi-strip-item">
+          <span className="kpi-strip-label">Fuel Used</span>
+          <span className="kpi-strip-val">{kpi ? `${kpi.fuel_used} L` : `${telemetry.fuel_used} L`}</span>
+        </div>
+        <div className="kpi-strip-item">
+          <span className="kpi-strip-label">Load Cycles</span>
+          <span className="kpi-strip-val text-cat-yellow">{kpi ? kpi.load_cycles : telemetry.load_cycles}</span>
+        </div>
+        <div className="kpi-strip-item">
+          <span className="kpi-strip-label">Idle Time</span>
+          <span className={`kpi-strip-val ${((kpi ? kpi.idle_minutes : telemetry.idle_minutes) > 45) ? 'text-amber' : ''}`}>
+            {kpi ? `${kpi.idle_minutes}m` : `${telemetry.idle_minutes}m`}
+          </span>
+        </div>
+        <div className="kpi-strip-item">
+          <span className="kpi-strip-label">Shift Tasks</span>
+          <span className="kpi-strip-val">
+            {kpi ? `${kpi.tasks_completed}/${kpi.tasks_total}` : '0/3'}
+          </span>
+        </div>
+        <div className="kpi-strip-item">
+          <span className="kpi-strip-label">Active Alerts</span>
+          <span className={`kpi-strip-val ${(active_alert_count > 0) ? 'text-red' : 'text-green'}`}>
+            {active_alert_count}
+          </span>
+        </div>
+        <div className="kpi-strip-item">
+          <span className="kpi-strip-label">Open Requests</span>
+          <span className={`kpi-strip-val ${(open_request_count > 0) ? 'text-blue' : ''}`}>
+            {open_request_count}
+          </span>
+        </div>
+        <div className="kpi-strip-item">
+          <span className="kpi-strip-label">Training Done</span>
+          <span className="kpi-strip-val text-green">
+            {kpi ? kpi.training_completed_count : 0}
+          </span>
+        </div>
+      </div>
+
       <div className="dashboard-grid">
         {/* 1. OPERATOR / MACHINE SUMMARY (Span 12) */}
         <div className="col-12">

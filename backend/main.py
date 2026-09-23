@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from typing import List, Optional
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -14,6 +14,9 @@ from models import (
     TaskPauseEvent,
     SupportRequest,
     SupportRequestEvent,
+    TrainingAttempt,
+    AuditEvent,
+    Notification,
     utc_now,
 )
 from schemas import (
@@ -38,6 +41,13 @@ from schemas import (
     TrainingSubmitRequest,
     TrainingSubmitResponse,
     ShiftHandoverResponse,
+    AuditEventSchema,
+    NotificationSchema,
+    NotificationReadResponse,
+    NotificationReadAllResponse,
+    DemoScenarioResponse,
+    DemoResetResponse,
+    KPISummaryResponse,
 )
 from seed import seed_data
 from services.alert_engine import alert_engine, parse_incident
@@ -46,6 +56,15 @@ from services.usage_insights import usage_insights_service
 from services.assistant_service import assistant_service
 from services.training_service import training_service
 from services.handover_service import handover_service
+from services.event_bus import event_bus
+from services.audit_service import record_audit_event, list_audit_events
+from services.notification_service import create_notification, list_notifications, mark_as_read, mark_all_read
+import services.demo_service as demo_service
+
+
+
+# Ensure database tables exist at module load
+Base.metadata.create_all(bind=engine)
 
 
 @asynccontextmanager
@@ -79,6 +98,79 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Role Enforcement Helpers
+# ---------------------------------------------------------------------------
+
+
+def get_current_role(
+    x_role: Optional[str] = Header(None),
+    role: Optional[str] = Query(None),
+) -> str:
+    """Extract role from X-Role header or ?role= query param (default: OPERATOR)."""
+    raw_role = x_role or role or "OPERATOR"
+    return raw_role.upper().strip()
+
+
+def require_role(allowed_roles: List[str]):
+    """Enforces caller role, returning 403 Forbidden with descriptive detail if unauthorized."""
+    def _role_checker(current_role: str = Depends(get_current_role)):
+        normalized_allowed = [ar.upper().strip() for ar in allowed_roles]
+        if current_role not in normalized_allowed:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Forbidden: Action requires one of roles {allowed_roles}, but caller has role '{current_role}'.",
+            )
+        return current_role
+    return _role_checker
+
+
+def require_supervisor_role(
+    x_role: Optional[str] = Header(None),
+    role: Optional[str] = Query(None),
+) -> str:
+    """
+    Supervisor role enforcement:
+    - If X-Role or role param is explicitly provided and is not SUPERVISOR (e.g. OPERATOR),
+      raise 403 Forbidden.
+    - If caller is explicitly SUPERVISOR, allow.
+    - If no role is specified (default supervisor route access for backward compatibility), allow as SUPERVISOR.
+    """
+    raw_role = x_role or role
+    if raw_role:
+        normalized = raw_role.upper().strip()
+        if normalized != "SUPERVISOR":
+            raise HTTPException(
+                status_code=403,
+                detail=f"Forbidden: Action requires role 'SUPERVISOR', but caller has role '{normalized}'.",
+            )
+        return normalized
+    return "SUPERVISOR"
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Real-Time WebSocket Endpoint
+# ---------------------------------------------------------------------------
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """
+    Real-time push gateway. Pushes TASK_UPDATED, INCIDENT_CREATED, INCIDENT_UPDATED,
+    REQUEST_CREATED, REQUEST_UPDATED, TRAINING_UPDATED, TELEMETRY_UPDATED, NOTIFICATION_CREATED.
+    """
+    await event_bus.connect(websocket)
+    try:
+        while True:
+            msg = await websocket.receive_text()
+            if msg == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        await event_bus.disconnect(websocket)
+    except Exception:
+        await event_bus.disconnect(websocket)
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -172,7 +264,11 @@ def get_tasks(db: Session = Depends(get_db)):
 
 
 @app.post("/api/tasks/{task_id}/start", response_model=TaskSchema)
-def start_task(task_id: str, db: Session = Depends(get_db)):
+def start_task(
+    task_id: str,
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
     task = db.query(Task).filter(Task.task_id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -186,11 +282,28 @@ def start_task(task_id: str, db: Session = Depends(get_db)):
     task.status = "IN_PROGRESS"
     db.commit()
     db.refresh(task)
+
+    record_audit_event(
+        db,
+        actor_id="OP1001",
+        actor_role=current_role,
+        action="TASK_STARTED",
+        entity_type="TASK",
+        entity_id=task.task_id,
+        details={"task_type": task.task_type},
+    )
+    event_bus.broadcast_sync("TASK_UPDATED", {"task_id": task.task_id, "status": task.status})
+
     return task
 
 
 @app.post("/api/tasks/{task_id}/pause", response_model=TaskSchema)
-def pause_task(task_id: str, req: PauseTaskRequest, db: Session = Depends(get_db)):
+def pause_task(
+    task_id: str,
+    req: PauseTaskRequest,
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
     task = db.query(Task).filter(Task.task_id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -213,11 +326,36 @@ def pause_task(task_id: str, req: PauseTaskRequest, db: Session = Depends(get_db
 
     db.commit()
     db.refresh(task)
+
+    record_audit_event(
+        db,
+        actor_id="OP1001",
+        actor_role=current_role,
+        action="TASK_PAUSED",
+        entity_type="TASK",
+        entity_id=task.task_id,
+        details={"reason": req.reason.value, "note": req.note},
+    )
+    create_notification(
+        db,
+        category="TASK",
+        priority="MEDIUM",
+        title=f"Task {task.task_id} Paused",
+        message=f"{task.task_type} paused: {req.reason.value}" + (f' ("{req.note}")' if req.note else ""),
+        reference_type="task",
+        reference_id=task.task_id,
+    )
+    event_bus.broadcast_sync("TASK_UPDATED", {"task_id": task.task_id, "status": task.status})
+
     return task
 
 
 @app.post("/api/tasks/{task_id}/resume", response_model=TaskSchema)
-def resume_task(task_id: str, db: Session = Depends(get_db)):
+def resume_task(
+    task_id: str,
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
     task = db.query(Task).filter(Task.task_id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -242,11 +380,27 @@ def resume_task(task_id: str, db: Session = Depends(get_db)):
 
     db.commit()
     db.refresh(task)
+
+    record_audit_event(
+        db,
+        actor_id="OP1001",
+        actor_role=current_role,
+        action="TASK_RESUMED",
+        entity_type="TASK",
+        entity_id=task.task_id,
+        details={"task_type": task.task_type},
+    )
+    event_bus.broadcast_sync("TASK_UPDATED", {"task_id": task.task_id, "status": task.status})
+
     return task
 
 
 @app.post("/api/tasks/{task_id}/complete", response_model=TaskSchema)
-def complete_task(task_id: str, db: Session = Depends(get_db)):
+def complete_task(
+    task_id: str,
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
     task = db.query(Task).filter(Task.task_id == task_id).first()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -272,6 +426,27 @@ def complete_task(task_id: str, db: Session = Depends(get_db)):
     task.progress = 100
     db.commit()
     db.refresh(task)
+
+    record_audit_event(
+        db,
+        actor_id="OP1001",
+        actor_role=current_role,
+        action="TASK_COMPLETED",
+        entity_type="TASK",
+        entity_id=task.task_id,
+        details={"task_type": task.task_type},
+    )
+    create_notification(
+        db,
+        category="TASK",
+        priority="INFO",
+        title=f"Task {task.task_id} Completed",
+        message=f"{task.task_type} marked completed.",
+        reference_type="task",
+        reference_id=task.task_id,
+    )
+    event_bus.broadcast_sync("TASK_UPDATED", {"task_id": task.task_id, "status": task.status})
+
     return task
 
 
@@ -291,7 +466,11 @@ def get_incidents(status: Optional[str] = Query(None), db: Session = Depends(get
 
 
 @app.post("/api/incidents/{incident_id}/acknowledge", response_model=IncidentSchema)
-def acknowledge_incident(incident_id: int, db: Session = Depends(get_db)):
+def acknowledge_incident(
+    incident_id: int,
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
@@ -302,6 +481,17 @@ def acknowledge_incident(incident_id: int, db: Session = Depends(get_db)):
         incident.updated_at = utc_now()
         db.commit()
         db.refresh(incident)
+
+        record_audit_event(
+            db,
+            actor_id="OP1001",
+            actor_role=current_role,
+            action="INCIDENT_ACKNOWLEDGED",
+            entity_type="INCIDENT",
+            entity_id=str(incident.id),
+            details={"title": incident.title, "severity": incident.severity},
+        )
+        event_bus.broadcast_sync("INCIDENT_UPDATED", {"incident_id": incident.id, "status": "ACKNOWLEDGED"})
 
     return parse_incident(incident)
 
@@ -435,6 +625,7 @@ def serialize_support_request(req: SupportRequest, db: Session) -> dict:
 @app.post("/api/support-requests", response_model=SupportRequestSchema)
 def create_support_request(
     payload: CreateSupportRequestPayload,
+    current_role: str = Depends(get_current_role),
     db: Session = Depends(get_db),
 ):
     # Determine next request ID format: R001, R002, etc.
@@ -446,12 +637,14 @@ def create_support_request(
         count += 1
         new_id = f"R{count + 1:03d}"
 
+    req_type_str = payload.request_type.value if hasattr(payload.request_type, "value") else str(payload.request_type)
+
     req = SupportRequest(
         id=new_id,
         operator_id="OP1001",
         machine_id="EXC001",
         task_id=payload.task_id,
-        request_type=payload.request_type.value,
+        request_type=req_type_str,
         message=payload.message,
         status="OPEN",
         created_at=utc_now(),
@@ -470,6 +663,26 @@ def create_support_request(
 
     db.commit()
     db.refresh(req)
+
+    record_audit_event(
+        db,
+        actor_id="OP1001",
+        actor_role=current_role,
+        action="REQUEST_CREATED",
+        entity_type="SUPPORT_REQUEST",
+        entity_id=new_id,
+        details={"request_type": req_type_str, "message": payload.message},
+    )
+    create_notification(
+        db,
+        category="SUPPORT",
+        priority="HIGH",
+        title=f"Support Request {new_id} Submitted",
+        message=f"{req_type_str}: {payload.message}",
+        reference_type="support_request",
+        reference_id=new_id,
+    )
+    event_bus.broadcast_sync("REQUEST_CREATED", {"id": new_id, "status": "OPEN"})
 
     return serialize_support_request(req, db)
 
@@ -495,7 +708,11 @@ def list_support_requests(
 
 
 @app.post("/api/support-requests/{request_id}/acknowledge", response_model=SupportRequestSchema)
-def acknowledge_support_request(request_id: str, db: Session = Depends(get_db)):
+def acknowledge_support_request(
+    request_id: str,
+    current_role: str = Depends(require_supervisor_role),
+    db: Session = Depends(get_db),
+):
     req = db.query(SupportRequest).filter(SupportRequest.id == request_id).first()
     if not req:
         raise HTTPException(status_code=404, detail="Support request not found")
@@ -519,6 +736,16 @@ def acknowledge_support_request(request_id: str, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(req)
 
+        record_audit_event(
+            db,
+            actor_id="SUP001",
+            actor_role="SUPERVISOR",
+            action="REQUEST_ACKNOWLEDGED",
+            entity_type="SUPPORT_REQUEST",
+            entity_id=req.id,
+        )
+        event_bus.broadcast_sync("REQUEST_UPDATED", {"id": req.id, "status": req.status})
+
     return serialize_support_request(req, db)
 
 
@@ -526,6 +753,7 @@ def acknowledge_support_request(request_id: str, db: Session = Depends(get_db)):
 def respond_support_request(
     request_id: str,
     payload: RespondSupportRequestPayload,
+    current_role: str = Depends(require_supervisor_role),
     db: Session = Depends(get_db),
 ):
     req = db.query(SupportRequest).filter(SupportRequest.id == request_id).first()
@@ -550,11 +778,35 @@ def respond_support_request(
     db.commit()
     db.refresh(req)
 
+    record_audit_event(
+        db,
+        actor_id="SUP001",
+        actor_role="SUPERVISOR",
+        action="REQUEST_RESPONDED",
+        entity_type="SUPPORT_REQUEST",
+        entity_id=req.id,
+        details={"message": payload.message},
+    )
+    create_notification(
+        db,
+        category="SUPPORT",
+        priority="MEDIUM",
+        title=f"Supervisor Responded to {req.id}",
+        message=f'Supervisor response: "{payload.message}"',
+        reference_type="support_request",
+        reference_id=req.id,
+    )
+    event_bus.broadcast_sync("REQUEST_UPDATED", {"id": req.id, "status": req.status, "latest_response": payload.message})
+
     return serialize_support_request(req, db)
 
 
 @app.post("/api/support-requests/{request_id}/resolve", response_model=SupportRequestSchema)
-def resolve_support_request(request_id: str, db: Session = Depends(get_db)):
+def resolve_support_request(
+    request_id: str,
+    current_role: str = Depends(require_supervisor_role),
+    db: Session = Depends(get_db),
+):
     req = db.query(SupportRequest).filter(SupportRequest.id == request_id).first()
     if not req:
         raise HTTPException(status_code=404, detail="Support request not found")
@@ -577,6 +829,25 @@ def resolve_support_request(request_id: str, db: Session = Depends(get_db)):
     db.add(event)
     db.commit()
     db.refresh(req)
+
+    record_audit_event(
+        db,
+        actor_id="SUP001",
+        actor_role="SUPERVISOR",
+        action="REQUEST_RESOLVED",
+        entity_type="SUPPORT_REQUEST",
+        entity_id=req.id,
+    )
+    create_notification(
+        db,
+        category="SUPPORT",
+        priority="INFO",
+        title=f"Support Request {req.id} Resolved",
+        message="Supervisor marked ticket resolved.",
+        reference_type="support_request",
+        reference_id=req.id,
+    )
+    event_bus.broadcast_sync("REQUEST_UPDATED", {"id": req.id, "status": "RESOLVED"})
 
     return serialize_support_request(req, db)
 
@@ -643,11 +914,34 @@ def submit_training_quiz(
     module_id: str,
     payload: TrainingSubmitRequest,
     operator_id: str = Query("OP1001"),
+    current_role: str = Depends(get_current_role),
     db: Session = Depends(get_db),
 ):
     """Evaluate training quiz answers, calculate authoritative score, and persist completion."""
     try:
-        return training_service.submit_quiz(db, module_id, operator_id=operator_id, answers=payload.answers)
+        result = training_service.submit_quiz(db, module_id, operator_id=operator_id, answers=payload.answers)
+        if result.completed:
+            record_audit_event(
+                db,
+                actor_id=operator_id,
+                actor_role=current_role,
+                action="TRAINING_COMPLETED",
+                entity_type="TRAINING",
+                entity_id=module_id,
+                details={"score": result.score, "total": result.total},
+            )
+            create_notification(
+                db,
+                category="TRAINING",
+                priority="INFO",
+                title="Training Module Completed",
+                message=f"Operator completed {module_id} with score {result.score}/{result.total}.",
+                reference_type="training",
+                reference_id=module_id,
+            )
+            event_bus.broadcast_sync("TRAINING_UPDATED", {"module_id": module_id, "score": result.score})
+
+        return result
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
@@ -661,8 +955,155 @@ def submit_training_quiz(
 def get_shift_handover(
     machine_id: str = Query("EXC001"),
     operator_id: str = Query("OP1001"),
+    current_role: str = Depends(get_current_role),
     db: Session = Depends(get_db),
 ):
     """Generate comprehensive, factual shift handover facts and summary from database records."""
+    record_audit_event(
+        db,
+        actor_id=operator_id,
+        actor_role=current_role,
+        action="HANDOVER_GENERATED",
+        entity_type="HANDOVER",
+        entity_id=machine_id,
+    )
     return handover_service.get_handover_report(db, machine_id=machine_id, operator_id=operator_id)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 Routes: Audit Trail API
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/audit", response_model=List[AuditEventSchema])
+def get_audit_trail(
+    entity_type: Optional[str] = Query(None),
+    entity_id: Optional[str] = Query(None),
+    actor_id: Optional[str] = Query(None),
+    limit: int = Query(100),
+    current_role: str = Depends(get_current_role),
+    db: Session = Depends(get_db),
+):
+    """
+    Query audit trail with role scoping:
+    - SUPERVISOR: sees system-wide audit history.
+    - OPERATOR: scoped to own actions and task/incident entities.
+    """
+    return list_audit_events(
+        db,
+        actor_role=current_role,
+        current_actor_id="OP1001",
+        entity_type=entity_type,
+        entity_id=entity_id,
+        actor_id=actor_id,
+        limit=limit,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 Routes: Unified Notification Center
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/notifications", response_model=List[NotificationSchema])
+def get_notifications(
+    unread_only: bool = Query(False),
+    category: Optional[str] = Query(None),
+    limit: int = Query(50),
+    db: Session = Depends(get_db),
+):
+    """Retrieve operational notifications across safety, tasks, dispatch, and training."""
+    return list_notifications(db, unread_only=unread_only, category=category, limit=limit)
+
+
+@app.post("/api/notifications/{notification_id}/read", response_model=NotificationReadResponse)
+def read_notification(notification_id: str, db: Session = Depends(get_db)):
+    """Mark a notification as read."""
+    notif = mark_as_read(db, notification_id)
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return {"id": notif.id, "read": True}
+
+
+@app.post("/api/notifications/read-all", response_model=NotificationReadAllResponse)
+def read_all_notifications_endpoint(db: Session = Depends(get_db)):
+    """Mark all unread notifications as read."""
+    count = mark_all_read(db)
+    return {"marked_count": count}
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 Routes: Demo Scenario Controller & Deterministic Reset
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/demo/scenario/{scenario_name}", response_model=DemoScenarioResponse)
+def trigger_demo_scenario(scenario_name: str, db: Session = Depends(get_db)):
+    """
+    Simulate a realistic operational scenario by injecting telemetry/task conditions
+    and running live system engines (alert engine, notifications, WebSocket broadcasts).
+    """
+    try:
+        return demo_service.apply_scenario(db, scenario_name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/demo/reset", response_model=DemoResetResponse)
+def reset_demo_state(db: Session = Depends(get_db)):
+    """
+    Deterministically reset all demo state (tasks, telemetry, incidents, requests)
+    to standard starting baseline without deleting database schema.
+    """
+    return demo_service.reset_demo(db)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 Routes: Shift KPI Summary
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/kpi/summary", response_model=KPISummaryResponse)
+def get_kpi_summary(
+    machine_id: str = Query("EXC001"),
+    operator_id: str = Query("OP1001"),
+    db: Session = Depends(get_db),
+):
+    """
+    Return strictly factual shift KPIs computed from live database records.
+    No unverified claims (e.g., fuel saved or accident prevention %).
+    """
+    all_tasks = db.query(Task).all()
+    tasks_completed = sum(1 for t in all_tasks if t.status == "COMPLETED")
+    tasks_remaining = sum(1 for t in all_tasks if t.status in ["PENDING", "IN_PROGRESS", "PAUSED"])
+    tasks_at_risk = sum(1 for t in all_tasks if t.prediction_status in ["AT_RISK", "DELAYED"])
+
+    telemetry = db.query(TelemetryRecord).filter(TelemetryRecord.machine_id == machine_id).first()
+    recorded_idle = float(telemetry.idle_minutes) if telemetry else 0.0
+
+    unresolved_incidents = db.query(Incident).filter(
+        Incident.machine_id == machine_id,
+        Incident.status.in_(["ACTIVE", "ACKNOWLEDGED"])
+    ).count()
+
+    requests = db.query(SupportRequest).all()
+    support_requests_open = sum(1 for r in requests if r.status != "RESOLVED")
+    support_requests_resolved = sum(1 for r in requests if r.status == "RESOLVED")
+
+    training_completed = db.query(TrainingAttempt).filter(
+        TrainingAttempt.operator_id == operator_id,
+        TrainingAttempt.completed == True
+    ).count()
+
+    return {
+        "tasks_completed": tasks_completed,
+        "tasks_remaining": tasks_remaining,
+        "tasks_at_risk": tasks_at_risk,
+        "recorded_idle_minutes": recorded_idle,
+        "unresolved_incidents": unresolved_incidents,
+        "support_requests_open": support_requests_open,
+        "support_requests_resolved": support_requests_resolved,
+        "training_modules_completed": training_completed,
+    }
+
 

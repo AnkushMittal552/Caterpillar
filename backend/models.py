@@ -159,3 +159,35 @@ class TrainingAttempt(Base):
     completed = Column(Boolean, default=True, nullable=False)
     completed_at = Column(DateTime, default=utc_now, nullable=False)
 
+
+# ---------------------------------------------------------------------------
+# Phase 5 Models: Audit Event & Unified Notification Center
+# ---------------------------------------------------------------------------
+
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    actor_id = Column(String, nullable=False, index=True)  # OP1001, SUP001, SYSTEM
+    actor_role = Column(String, nullable=False, default="OPERATOR")  # OPERATOR, SUPERVISOR, SYSTEM
+    action = Column(String, nullable=False, index=True)  # e.g., TASK_STARTED, REQUEST_RESPONDED
+    entity_type = Column(String, nullable=False, index=True)  # TASK, INCIDENT, SUPPORT_REQUEST, TRAINING, SYSTEM
+    entity_id = Column(String, nullable=False, index=True)  # T001, R001, INC-001, etc.
+    timestamp = Column(DateTime, default=utc_now, nullable=False)
+    details = Column(String, nullable=True)  # JSON or text notes
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(String, primary_key=True, index=True)  # NOTIF-001, etc.
+    category = Column(String, nullable=False, default="SYSTEM")  # SAFETY, PRODUCTIVITY, TASK, SUPPORT, TRAINING, SYSTEM
+    priority = Column(String, nullable=False, default="MEDIUM")  # CRITICAL, HIGH, MEDIUM, LOW, INFO
+    title = Column(String, nullable=False)
+    message = Column(String, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    read = Column(Boolean, default=False, nullable=False)
+    reference_type = Column(String, nullable=True)  # task, incident, support_request, training
+    reference_id = Column(String, nullable=True)  # T001, INC-001, R001, etc.
+
