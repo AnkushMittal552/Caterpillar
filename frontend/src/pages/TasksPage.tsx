@@ -368,7 +368,7 @@ export const TasksPage: React.FC<TasksPageProps> = ({
                           <Cpu size={12} /> Prediction Basis
                         </div>
                         <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--cat-yellow)', marginTop: '2px' }}>
-                          {task.prediction_basis || 'RandomForest Regressor'}
+                          {task.prediction_basis || 'Synthetic demonstration history'}
                         </div>
                       </div>
                     </div>

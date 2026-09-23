@@ -63,7 +63,8 @@ export const DemoController: React.FC<DemoControllerProps> = ({ onScenarioApplie
       <div className="demo-controller-header" onClick={() => setIsOpen(!isOpen)}>
         <div className="demo-header-title">
           <Sliders size={18} className="text-cat-yellow" />
-          <span className="demo-badge">DEMO SIMULATION CONTROLLER</span>
+          <span className="demo-mode-tag">DEMO MODE</span>
+          <span className="demo-badge">SCENARIO CONTROLLER</span>
           <span className="demo-subtitle">Reproducible live scenarios for presentation & testing</span>
         </div>
         <button type="button" className="demo-collapse-btn">

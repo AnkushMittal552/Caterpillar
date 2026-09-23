@@ -2719,11 +2719,22 @@ body {
   flex-wrap: wrap;
 }
 
+.demo-mode-tag {
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  background-color: #EAB308;
+  color: #000000;
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
 .demo-badge {
   font-size: 0.8rem;
-  font-weight: 900;
+  font-weight: 800;
   letter-spacing: 0.06em;
-  color: var(--cat-yellow);
+  color: #F3F4F6;
 }
 
 .demo-subtitle {

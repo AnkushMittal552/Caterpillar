@@ -33,7 +33,7 @@ def apply_scenario(db: Session, scenario_name: str) -> Dict[str, Any]:
 
     if scenario == "normal":
         # 1. Normal Operation: restore telemetry to nominal
-        telemetry = db.query(TelemetryRecord).filter(TelemetryRecord.machine_id == "EXC001").first()
+        telemetry = db.query(TelemetryRecord).filter(TelemetryRecord.machine_id == "EXC001").order_by(TelemetryRecord.id.desc()).first()
         if telemetry:
             telemetry.seatbelt_status = "Fastened"
             telemetry.idle_minutes = 15
@@ -76,7 +76,7 @@ def apply_scenario(db: Session, scenario_name: str) -> Dict[str, Any]:
 
     elif scenario == "seatbelt_event":
         # 2. Seatbelt Event: Unfasten seatbelt while engine active
-        telemetry = db.query(TelemetryRecord).filter(TelemetryRecord.machine_id == "EXC001").first()
+        telemetry = db.query(TelemetryRecord).filter(TelemetryRecord.machine_id == "EXC001").order_by(TelemetryRecord.id.desc()).first()
         if telemetry:
             telemetry.seatbelt_status = "Unfastened"
             telemetry.machine_active = True
@@ -85,7 +85,7 @@ def apply_scenario(db: Session, scenario_name: str) -> Dict[str, Any]:
 
         # Run alert engine to deterministically produce incident
         incidents = alert_engine.evaluate_machine_alerts(db, "EXC001")
-        new_incidents = [i for i in incidents if i.incident_type == "UNFASTENED_SEATBELT"]
+        new_incidents = [i for i in incidents if i.incident_type in ["SEATBELT_EVENT", "UNFASTENED_SEATBELT"]]
 
         record_audit_event(
             db,
@@ -104,11 +104,11 @@ def apply_scenario(db: Session, scenario_name: str) -> Dict[str, Any]:
             title="Safety Alert: Seatbelt Unfastened",
             message="Operator seatbelt unfastened while Cat 336 engine is running. Immediate cab attention required.",
             reference_type="incident",
-            reference_id="UNFASTENED_SEATBELT",
+            reference_id="SEATBELT_EVENT",
         )
 
         event_bus.broadcast_sync("TELEMETRY_UPDATED", {"machine_id": "EXC001"})
-        event_bus.broadcast_sync("INCIDENT_CREATED", {"incident_type": "UNFASTENED_SEATBELT"})
+        event_bus.broadcast_sync("INCIDENT_CREATED", {"incident_type": "SEATBELT_EVENT"})
 
         return {
             "scenario": "seatbelt_event",
@@ -119,7 +119,7 @@ def apply_scenario(db: Session, scenario_name: str) -> Dict[str, Any]:
 
     elif scenario == "high_idle":
         # 3. High Idle: set idle minutes to 65
-        telemetry = db.query(TelemetryRecord).filter(TelemetryRecord.machine_id == "EXC001").first()
+        telemetry = db.query(TelemetryRecord).filter(TelemetryRecord.machine_id == "EXC001").order_by(TelemetryRecord.id.desc()).first()
         if telemetry:
             telemetry.idle_minutes = 65
             telemetry.machine_active = True
@@ -127,7 +127,7 @@ def apply_scenario(db: Session, scenario_name: str) -> Dict[str, Any]:
             db.commit()
 
         incidents = alert_engine.evaluate_machine_alerts(db, "EXC001")
-        new_incidents = [i for i in incidents if i.incident_type == "HIGH_IDLE_TIME"]
+        new_incidents = [i for i in incidents if i.incident_type in ["HIGH_IDLE", "HIGH_IDLE_TIME"]]
 
         record_audit_event(
             db,
@@ -146,11 +146,11 @@ def apply_scenario(db: Session, scenario_name: str) -> Dict[str, Any]:
             title="Productivity Alert: High Idle Time",
             message="Machine idle time reached 65 minutes (exceeds 45m threshold). Potential fuel inefficiency.",
             reference_type="incident",
-            reference_id="HIGH_IDLE_TIME",
+            reference_id="HIGH_IDLE",
         )
 
         event_bus.broadcast_sync("TELEMETRY_UPDATED", {"machine_id": "EXC001"})
-        event_bus.broadcast_sync("INCIDENT_CREATED", {"incident_type": "HIGH_IDLE_TIME"})
+        event_bus.broadcast_sync("INCIDENT_CREATED", {"incident_type": "HIGH_IDLE"})
 
         return {
             "scenario": "high_idle",
@@ -273,7 +273,7 @@ def apply_scenario(db: Session, scenario_name: str) -> Dict[str, Any]:
 
     elif scenario == "telemetry_lost":
         # 6. Telemetry Lost: set machine_active=False
-        telemetry = db.query(TelemetryRecord).filter(TelemetryRecord.machine_id == "EXC001").first()
+        telemetry = db.query(TelemetryRecord).filter(TelemetryRecord.machine_id == "EXC001").order_by(TelemetryRecord.id.desc()).first()
         if telemetry:
             telemetry.machine_active = False
             telemetry.timestamp = utc_now()
@@ -309,7 +309,7 @@ def apply_scenario(db: Session, scenario_name: str) -> Dict[str, Any]:
 
     elif scenario == "restore_normal":
         # 7. Restore Normal Conditions
-        telemetry = db.query(TelemetryRecord).filter(TelemetryRecord.machine_id == "EXC001").first()
+        telemetry = db.query(TelemetryRecord).filter(TelemetryRecord.machine_id == "EXC001").order_by(TelemetryRecord.id.desc()).first()
         if telemetry:
             telemetry.seatbelt_status = "Fastened"
             telemetry.idle_minutes = 12
@@ -377,7 +377,7 @@ def reset_demo(db: Session) -> Dict[str, Any]:
     - Clean audit events & reset notifications
     """
     # 1. Reset Telemetry
-    telemetry = db.query(TelemetryRecord).filter(TelemetryRecord.machine_id == "EXC001").first()
+    telemetry = db.query(TelemetryRecord).filter(TelemetryRecord.machine_id == "EXC001").order_by(TelemetryRecord.id.desc()).first()
     if telemetry:
         telemetry.engine_hours = 1524.8
         telemetry.fuel_used = 3.8
