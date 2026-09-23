@@ -5,7 +5,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from database import engine, Base, get_db
-from models import User, Machine, Task, TelemetryRecord, Incident, TaskPauseEvent, utc_now
+from models import (
+    User,
+    Machine,
+    Task,
+    TelemetryRecord,
+    Incident,
+    TaskPauseEvent,
+    SupportRequest,
+    SupportRequestEvent,
+    utc_now,
+)
 from schemas import (
     HealthResponse,
     DashboardResponse,
@@ -13,9 +23,18 @@ from schemas import (
     PauseTaskRequest,
     IncidentSchema,
     DemoTelemetryUpdate,
+    TaskPredictionRequest,
+    TaskPredictionResponse,
+    UsageInsightsResponse,
+    CreateSupportRequestPayload,
+    RespondSupportRequestPayload,
+    SupportRequestSchema,
+    SupportRequestEventSchema,
 )
 from seed import seed_data
 from services.alert_engine import alert_engine, parse_incident
+from services.prediction_service import prediction_service
+from services.usage_insights import usage_insights_service
 
 
 @asynccontextmanager
@@ -28,8 +47,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="ShiftMate API",
-    description="Caterpillar Smart Operator Assistant - Phase 2 Backend",
-    version="2.0.0",
+    description="Caterpillar Smart Operator Assistant - Phase 3 Backend",
+    version="3.0.0",
     lifespan=lifespan,
 )
 
@@ -96,6 +115,16 @@ def get_dashboard(db: Session = Depends(get_db)):
     active_alert_count = len(unresolved_incidents)
     highest_priority_incident = parse_incident(unresolved_incidents[0]) if unresolved_incidents else None
 
+    # Count real open support requests: OPEN, ACKNOWLEDGED, IN_PROGRESS
+    open_request_count = (
+        db.query(SupportRequest)
+        .filter(
+            SupportRequest.status.in_(["OPEN", "ACKNOWLEDGED", "IN_PROGRESS"]),
+            SupportRequest.resolved_at.is_(None),
+        )
+        .count()
+    )
+
     return {
         "operator": {
             "id": operator.id,
@@ -115,7 +144,7 @@ def get_dashboard(db: Session = Depends(get_db)):
             "machine_active": telemetry.machine_active,
         },
         "active_alert_count": active_alert_count,
-        "open_request_count": 0,
+        "open_request_count": open_request_count,
         "highest_priority_incident": highest_priority_incident,
     }
 
@@ -325,3 +354,217 @@ def update_demo_telemetry(payload: DemoTelemetryUpdate, db: Session = Depends(ge
         },
         "incidents": [parse_incident(inc) for inc in unresolved_incidents],
     }
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Task-Time Prediction Endpoint
+# ---------------------------------------------------------------------------
+
+
+@app.post("/api/predict/task-time", response_model=TaskPredictionResponse)
+def predict_task_time(payload: TaskPredictionRequest):
+    result = prediction_service.predict(
+        task_type=payload.task_type,
+        weather=payload.weather,
+        operator_skill=payload.operator_skill,
+        machine_age=payload.machine_age,
+        baseline_estimate=payload.baseline_estimate,
+    )
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Usage Insights Endpoint
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/usage-insights", response_model=UsageInsightsResponse)
+def get_usage_insights(machine_id: str = "EXC001", db: Session = Depends(get_db)):
+    result = usage_insights_service.analyze_machine_usage(db, machine_id=machine_id)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Operator-Supervisor Support Request Endpoints
+# ---------------------------------------------------------------------------
+
+
+def serialize_support_request(req: SupportRequest, db: Session) -> dict:
+    events = (
+        db.query(SupportRequestEvent)
+        .filter(SupportRequestEvent.request_id == req.id)
+        .order_by(SupportRequestEvent.created_at.asc())
+        .all()
+    )
+
+    # Find latest supervisor response message if any
+    latest_response = None
+    for ev in reversed(events):
+        if ev.event_type == "RESPONDED" and ev.message:
+            latest_response = ev.message
+            break
+
+    return {
+        "id": req.id,
+        "operator_id": req.operator_id,
+        "machine_id": req.machine_id,
+        "task_id": req.task_id,
+        "request_type": req.request_type,
+        "message": req.message,
+        "status": req.status,
+        "created_at": req.created_at,
+        "updated_at": req.updated_at,
+        "acknowledged_at": req.acknowledged_at,
+        "resolved_at": req.resolved_at,
+        "latest_response": latest_response,
+        "events": events,
+    }
+
+
+@app.post("/api/support-requests", response_model=SupportRequestSchema)
+def create_support_request(
+    payload: CreateSupportRequestPayload,
+    db: Session = Depends(get_db),
+):
+    # Determine next request ID format: R001, R002, etc.
+    count = db.query(SupportRequest).count()
+    new_id = f"R{count + 1:03d}"
+
+    # Ensure unique ID in case of prior deletions
+    while db.query(SupportRequest).filter(SupportRequest.id == new_id).first():
+        count += 1
+        new_id = f"R{count + 1:03d}"
+
+    req = SupportRequest(
+        id=new_id,
+        operator_id="OP1001",
+        machine_id="EXC001",
+        task_id=payload.task_id,
+        request_type=payload.request_type.value,
+        message=payload.message,
+        status="OPEN",
+        created_at=utc_now(),
+        updated_at=utc_now(),
+    )
+    db.add(req)
+
+    event = SupportRequestEvent(
+        request_id=new_id,
+        actor_id="OP1001",
+        event_type="CREATED",
+        message=payload.message,
+        created_at=utc_now(),
+    )
+    db.add(event)
+
+    db.commit()
+    db.refresh(req)
+
+    return serialize_support_request(req, db)
+
+
+@app.get("/api/support-requests", response_model=List[SupportRequestSchema])
+def list_support_requests(
+    status: Optional[str] = Query(None),
+    operator_id: Optional[str] = Query(None),
+    machine_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    query = db.query(SupportRequest)
+
+    if status:
+        query = query.filter(SupportRequest.status == status.upper())
+    if operator_id:
+        query = query.filter(SupportRequest.operator_id == operator_id)
+    if machine_id:
+        query = query.filter(SupportRequest.machine_id == machine_id)
+
+    requests = query.order_by(SupportRequest.created_at.desc()).all()
+    return [serialize_support_request(r, db) for r in requests]
+
+
+@app.post("/api/support-requests/{request_id}/acknowledge", response_model=SupportRequestSchema)
+def acknowledge_support_request(request_id: str, db: Session = Depends(get_db)):
+    req = db.query(SupportRequest).filter(SupportRequest.id == request_id).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Support request not found")
+
+    if req.status == "RESOLVED":
+        raise HTTPException(status_code=400, detail="Cannot acknowledge a resolved request")
+
+    if req.status == "OPEN":
+        req.status = "ACKNOWLEDGED"
+        req.acknowledged_at = utc_now()
+        req.updated_at = utc_now()
+
+        event = SupportRequestEvent(
+            request_id=req.id,
+            actor_id="SUP001",
+            event_type="ACKNOWLEDGED",
+            message="Supervisor acknowledged request.",
+            created_at=utc_now(),
+        )
+        db.add(event)
+        db.commit()
+        db.refresh(req)
+
+    return serialize_support_request(req, db)
+
+
+@app.post("/api/support-requests/{request_id}/respond", response_model=SupportRequestSchema)
+def respond_support_request(
+    request_id: str,
+    payload: RespondSupportRequestPayload,
+    db: Session = Depends(get_db),
+):
+    req = db.query(SupportRequest).filter(SupportRequest.id == request_id).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Support request not found")
+
+    if req.status == "RESOLVED":
+        raise HTTPException(status_code=400, detail="Cannot respond to a resolved request")
+
+    # Transition to IN_PROGRESS upon supervisor response
+    req.status = "IN_PROGRESS"
+    req.updated_at = utc_now()
+
+    event = SupportRequestEvent(
+        request_id=req.id,
+        actor_id="SUP001",
+        event_type="RESPONDED",
+        message=payload.message,
+        created_at=utc_now(),
+    )
+    db.add(event)
+    db.commit()
+    db.refresh(req)
+
+    return serialize_support_request(req, db)
+
+
+@app.post("/api/support-requests/{request_id}/resolve", response_model=SupportRequestSchema)
+def resolve_support_request(request_id: str, db: Session = Depends(get_db)):
+    req = db.query(SupportRequest).filter(SupportRequest.id == request_id).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Support request not found")
+
+    if req.status == "RESOLVED":
+        # Idempotent return
+        return serialize_support_request(req, db)
+
+    req.status = "RESOLVED"
+    req.resolved_at = utc_now()
+    req.updated_at = utc_now()
+
+    event = SupportRequestEvent(
+        request_id=req.id,
+        actor_id="SUP001",
+        event_type="RESOLVED",
+        message="Supervisor marked request resolved.",
+        created_at=utc_now(),
+    )
+    db.add(event)
+    db.commit()
+    db.refresh(req)
+
+    return serialize_support_request(req, db)

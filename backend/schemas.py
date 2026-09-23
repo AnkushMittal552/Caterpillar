@@ -28,8 +28,13 @@ class TaskSchema(BaseModel):
     task_type: str
     status: str
     planned_minutes: int
-    predicted_minutes: Optional[int] = None
+    predicted_minutes: Optional[float] = None
     progress: int = 0
+    weather: Optional[str] = None
+    operator_skill: Optional[str] = None
+    machine_age: Optional[float] = None
+    prediction_status: Optional[str] = None
+    prediction_basis: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -95,3 +100,85 @@ class DemoTelemetryUpdate(BaseModel):
     fuel_used: Optional[float] = None
     load_cycles: Optional[int] = None
     engine_hours: Optional[float] = None
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 Schemas
+# ---------------------------------------------------------------------------
+
+
+class TaskPredictionRequest(BaseModel):
+    task_type: str
+    weather: str
+    operator_skill: str
+    machine_age: float
+    baseline_estimate: float
+
+
+class TaskPredictionResponse(BaseModel):
+    predicted_minutes: Optional[float] = None
+    baseline_estimate: float
+    difference_minutes: Optional[float] = None
+    prediction_status: str  # ON_TRACK, AT_RISK, DELAYED, UNAVAILABLE
+    model: str = "random_forest_demo"
+    data_basis: str = "synthetic_demonstration_history"
+
+
+class UsageInsight(BaseModel):
+    type: str
+    category: str
+    severity: str
+    message: str
+    evidence: Dict[str, Any] = Field(default_factory=dict)
+
+
+class UsageInsightsResponse(BaseModel):
+    machine_id: str
+    generated_at: str
+    insights: List[UsageInsight]
+
+
+class SupportRequestType(str, Enum):
+    LOGISTICS = "LOGISTICS"
+    MAINTENANCE = "MAINTENANCE"
+    MATERIAL = "MATERIAL"
+    SUPERVISOR_ASSISTANCE = "SUPERVISOR_ASSISTANCE"
+
+
+class CreateSupportRequestPayload(BaseModel):
+    request_type: SupportRequestType
+    task_id: Optional[str] = None
+    message: str
+
+
+class RespondSupportRequestPayload(BaseModel):
+    message: str
+
+
+class SupportRequestEventSchema(BaseModel):
+    id: int
+    request_id: str
+    actor_id: str
+    event_type: str
+    message: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SupportRequestSchema(BaseModel):
+    id: str
+    operator_id: str
+    machine_id: str
+    task_id: Optional[str] = None
+    request_type: str
+    message: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    acknowledged_at: Optional[datetime] = None
+    resolved_at: Optional[datetime] = None
+    latest_response: Optional[str] = None
+    events: List[SupportRequestEventSchema] = Field(default_factory=list)
+
+    model_config = ConfigDict(from_attributes=True)

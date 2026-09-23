@@ -31,8 +31,15 @@ class Task(Base):
     task_type = Column(String, nullable=False)
     status = Column(String, nullable=False, default="PENDING")
     planned_minutes = Column(Integer, nullable=False, default=0)
-    predicted_minutes = Column(Integer, nullable=True)
+    predicted_minutes = Column(Float, nullable=True)
     progress = Column(Integer, nullable=False, default=0)
+
+    # Phase 3 Fields for Task Prediction Details
+    weather = Column(String, nullable=True)
+    operator_skill = Column(String, nullable=True)
+    machine_age = Column(Float, nullable=True)
+    prediction_status = Column(String, nullable=True)  # ON_TRACK, AT_RISK, DELAYED, UNAVAILABLE
+    prediction_basis = Column(String, nullable=True, default="synthetic_demonstration_history")
 
 
 class TaskPauseEvent(Base):
@@ -80,3 +87,35 @@ class TelemetryRecord(Base):
     seatbelt_status = Column(String, nullable=False)
     machine_active = Column(Boolean, default=True, nullable=True)
     source = Column(String, nullable=False, default="SUPPLIED_SAMPLE")
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 Models: Support Request & Event Audit Trail
+# ---------------------------------------------------------------------------
+
+
+class SupportRequest(Base):
+    __tablename__ = "support_requests"
+
+    id = Column(String, primary_key=True, index=True)  # e.g., R001
+    operator_id = Column(String, nullable=False, index=True)
+    machine_id = Column(String, nullable=False, index=True)
+    task_id = Column(String, nullable=True, index=True)
+    request_type = Column(String, nullable=False)  # LOGISTICS, MAINTENANCE, MATERIAL, SUPERVISOR_ASSISTANCE
+    message = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="OPEN", index=True)  # OPEN, ACKNOWLEDGED, IN_PROGRESS, RESOLVED
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
+    acknowledged_at = Column(DateTime, nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+
+
+class SupportRequestEvent(Base):
+    __tablename__ = "support_request_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    request_id = Column(String, nullable=False, index=True)
+    actor_id = Column(String, nullable=False)
+    event_type = Column(String, nullable=False)  # CREATED, ACKNOWLEDGED, RESPONDED, RESOLVED
+    message = Column(String, nullable=True)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
