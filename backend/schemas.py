@@ -182,3 +182,112 @@ class SupportRequestSchema(BaseModel):
     events: List[SupportRequestEventSchema] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Schemas: Grounded Assistant, Training Hub, & Handover
+# ---------------------------------------------------------------------------
+
+
+class ReferenceItem(BaseModel):
+    type: str  # task, incident, support_request, telemetry, insight, training
+    id: str
+    label: Optional[str] = None
+
+
+class ProposedAction(BaseModel):
+    type: str  # CREATE_SUPPORT_REQUEST
+    requires_confirmation: bool = True
+    payload: Dict[str, Any]
+
+
+class AssistantMessageRequest(BaseModel):
+    message: str
+
+
+class AssistantMessageResponse(BaseModel):
+    answer: str
+    references: List[ReferenceItem] = Field(default_factory=list)
+    proposed_action: Optional[ProposedAction] = None
+
+
+class QuestionChoice(BaseModel):
+    key: str  # "A", "B", "C", "D"
+    text: str
+
+
+class TrainingQuestionPublic(BaseModel):
+    id: str
+    module_id: str
+    question: str
+    choices: List[QuestionChoice]
+
+
+class TrainingModuleSchema(BaseModel):
+    id: str
+    title: str
+    description: str
+    category: str
+    estimated_minutes: int
+    active: bool
+    question_count: int = 0
+    completed: bool = False
+    last_score: Optional[int] = None
+    total_questions: Optional[int] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TrainingModuleDetailSchema(BaseModel):
+    module: TrainingModuleSchema
+    questions: List[TrainingQuestionPublic]
+
+
+class TrainingRecommendation(BaseModel):
+    module: TrainingModuleSchema
+    reason: str
+    trigger_event: Optional[str] = None
+
+
+class TrainingSubmitRequest(BaseModel):
+    answers: Dict[str, str]  # e.g., {"Q_SB_1": "B", "Q_SB_2": "A"}
+
+
+class TrainingSubmitResponse(BaseModel):
+    module_id: str
+    score: int
+    total: int
+    completed: bool
+    feedback: Optional[List[Dict[str, Any]]] = None
+
+
+class ShiftHandoverTaskBreakdown(BaseModel):
+    completed: List[TaskSchema] = Field(default_factory=list)
+    unfinished: List[TaskSchema] = Field(default_factory=list)
+
+
+class ShiftHandoverIncidentBreakdown(BaseModel):
+    unresolved: List[IncidentSchema] = Field(default_factory=list)
+    resolved: List[IncidentSchema] = Field(default_factory=list)
+
+
+class ShiftHandoverRequestBreakdown(BaseModel):
+    open: List[SupportRequestSchema] = Field(default_factory=list)
+    resolved: List[SupportRequestSchema] = Field(default_factory=list)
+
+
+class ShiftHandoverTrainingBreakdown(BaseModel):
+    completed: List[Dict[str, Any]] = Field(default_factory=list)
+    recommended: List[TrainingRecommendation] = Field(default_factory=list)
+
+
+class ShiftHandoverResponse(BaseModel):
+    shift: Dict[str, Any]
+    tasks: ShiftHandoverTaskBreakdown
+    delays: List[Dict[str, Any]] = Field(default_factory=list)
+    incidents: ShiftHandoverIncidentBreakdown
+    support_requests: ShiftHandoverRequestBreakdown
+    training: ShiftHandoverTrainingBreakdown
+    usage_insights: List[UsageInsight] = Field(default_factory=list)
+    summary_text: str
+

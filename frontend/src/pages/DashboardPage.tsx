@@ -16,6 +16,10 @@ import {
   PauseCircle,
   PlusCircle,
   TrendingUp,
+  Bot,
+  GraduationCap,
+  ArrowRightLeft,
+  Sparkles,
 } from 'lucide-react';
 
 interface DashboardPageProps {
@@ -25,6 +29,10 @@ interface DashboardPageProps {
   onNavigateToTasks?: () => void;
   onNavigateToSupervisor?: () => void;
   onRequestSupport?: () => void;
+  onNavigateToAssistant?: () => void;
+  onNavigateToTraining?: () => void;
+  onNavigateToHandover?: () => void;
+  trainingRecCount?: number;
 }
 
 export const DashboardPage: React.FC<DashboardPageProps> = ({
@@ -34,6 +42,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   onNavigateToTasks,
   onNavigateToSupervisor,
   onRequestSupport,
+  onNavigateToAssistant,
+  onNavigateToTraining,
+  onNavigateToHandover,
+  trainingRecCount = 0,
 }) => {
   const { operator, machine, current_task, telemetry, active_alert_count, open_request_count } = dashboard;
 
@@ -464,6 +476,150 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 6. PHASE 4 INTELLIGENCE SHORTCUTS (Span 12) */}
+        <div className="col-12">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem' }}>
+            {/* AI Assistant Shortcut */}
+            <div
+              className="industrial-card clickable-tile"
+              onClick={onNavigateToAssistant}
+              style={{
+                cursor: 'pointer',
+                padding: '1.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                borderLeft: '4px solid var(--cat-yellow)',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div style={{
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: 'rgba(255, 205, 0, 0.12)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--cat-yellow)',
+                }}>
+                  <Bot size={24} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 800, letterSpacing: '0.05em' }}>
+                    AI Operator Assistant
+                  </div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '0.15rem' }}>
+                    Ask Operational Questions
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                    Live telemetry & state grounding
+                  </div>
+                </div>
+              </div>
+              <ArrowRight size={18} color="var(--cat-yellow)" />
+            </div>
+
+            {/* Training Hub Shortcut */}
+            <div
+              className="industrial-card clickable-tile"
+              onClick={onNavigateToTraining}
+              style={{
+                cursor: 'pointer',
+                padding: '1.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                borderLeft: trainingRecCount > 0 ? '4px solid var(--cat-yellow)' : '4px solid var(--border-subtle)',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div style={{
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: trainingRecCount > 0 ? 'rgba(255, 205, 0, 0.12)' : 'var(--bg-tertiary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: trainingRecCount > 0 ? 'var(--cat-yellow)' : 'var(--text-secondary)',
+                }}>
+                  <GraduationCap size={24} />
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 800, letterSpacing: '0.05em' }}>
+                      Contextual Training
+                    </span>
+                    {trainingRecCount > 0 && (
+                      <span className="badge-tag" style={{ background: 'var(--cat-yellow)', color: '#0D0F12', fontWeight: 800, fontSize: '0.65rem', padding: '1px 6px' }}>
+                        {trainingRecCount} Rec
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '0.15rem' }}>
+                    Micro-Learning Hub
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                    {trainingRecCount > 0 ? (
+                      <span style={{ color: 'var(--cat-yellow)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Sparkles size={11} /> Shift events triggered
+                      </span>
+                    ) : (
+                      'Review safety standards'
+                    )}
+                  </div>
+                </div>
+              </div>
+              <ArrowRight size={18} color="var(--cat-yellow)" />
+            </div>
+
+            {/* Shift Handover Shortcut */}
+            <div
+              className="industrial-card clickable-tile"
+              onClick={onNavigateToHandover}
+              style={{
+                cursor: 'pointer',
+                padding: '1.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                borderLeft: '4px solid #10B981',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                <div style={{
+                  width: '44px',
+                  height: '44px',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#34D399',
+                }}>
+                  <ArrowRightLeft size={24} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 800, letterSpacing: '0.05em' }}>
+                    Automatic Shift Handover
+                  </div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '0.15rem' }}>
+                    Generate Handover Report
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                    Export facts & summary
+                  </div>
+                </div>
+              </div>
+              <ArrowRight size={18} color="#34D399" />
             </div>
           </div>
         </div>

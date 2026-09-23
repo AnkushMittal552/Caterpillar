@@ -9,6 +9,9 @@ import { TasksPage } from './pages/TasksPage';
 import { AlertsPage } from './pages/AlertsPage';
 import { TelemetryPage } from './pages/TelemetryPage';
 import { SupervisorPage } from './pages/SupervisorPage';
+import { AssistantPage } from './pages/AssistantPage';
+import { TrainingPage } from './pages/TrainingPage';
+import { HandoverPage } from './pages/HandoverPage';
 import { RequestSupportModal } from './components/RequestSupportModal';
 import {
   useDashboard,
@@ -16,6 +19,7 @@ import {
   useIncidents,
   useUsageInsights,
   useSupportRequests,
+  useTrainingRecommendations,
   apiStartTask,
   apiPauseTask,
   apiResumeTask,
@@ -79,6 +83,11 @@ export const App: React.FC = () => {
     refresh: refreshSupportRequests,
   } = useSupportRequests();
 
+  const {
+    data: trainingRecsData,
+    refresh: refreshTrainingRecs,
+  } = useTrainingRecommendations(dashboardData?.operator.id || 'OP1001');
+
   const isLive = dashboardIsLive && tasksIsLive && incidentsIsLive;
   const isLoading = dashboardLoading || tasksLoading || incidentsLoading;
   const activeError = dashboardError || tasksError || incidentsError || usageInsightsError || supportRequestsError;
@@ -93,6 +102,7 @@ export const App: React.FC = () => {
     (r) => r.status.toUpperCase() !== 'RESOLVED'
   );
   const openRequestCount = dashboardData?.open_request_count ?? openSupportRequests.length;
+  const trainingRecCount = trainingRecsData?.length ?? 0;
 
   const handleRefreshAll = async () => {
     await Promise.allSettled([
@@ -101,6 +111,7 @@ export const App: React.FC = () => {
       refreshIncidents(),
       refreshUsageInsights(),
       refreshSupportRequests(),
+      refreshTrainingRecs(),
     ]);
   };
 
@@ -173,12 +184,13 @@ export const App: React.FC = () => {
         isRefreshing={isLoading}
       />
 
-      {/* Navigation Bar with Dashboard, Tasks, Safety Alerts, Telemetry, and Supervisor */}
+      {/* Navigation Bar with Dashboard, Tasks, Safety Alerts, Telemetry, Supervisor, Assistant, Training, and Handover */}
       <Navigation
         currentTab={activeTab}
         onTabChange={setActiveTab}
         activeAlertCount={activeAlertCount}
         openRequestCount={openRequestCount}
+        trainingRecCount={trainingRecCount}
       />
 
       {/* Backend Connection Status Banner */}
@@ -203,6 +215,10 @@ export const App: React.FC = () => {
               onNavigateToTasks={() => setActiveTab('tasks')}
               onNavigateToSupervisor={() => setActiveTab('supervisor')}
               onRequestSupport={() => handleOpenSupportModal(dashboardData.current_task?.task_id)}
+              onNavigateToAssistant={() => setActiveTab('assistant')}
+              onNavigateToTraining={() => setActiveTab('training')}
+              onNavigateToHandover={() => setActiveTab('handover')}
+              trainingRecCount={trainingRecCount}
             />
           ) : (
             <ErrorState
@@ -265,6 +281,23 @@ export const App: React.FC = () => {
               await refreshSupportRequests();
             }}
             isRefreshing={supportRequestsLoading}
+          />
+        ) : activeTab === 'assistant' ? (
+          <AssistantPage
+            onNavigateToTasks={() => setActiveTab('tasks')}
+            onNavigateToAlerts={() => setActiveTab('alerts')}
+            onNavigateToSupervisor={() => setActiveTab('supervisor')}
+            onNavigateToTraining={() => setActiveTab('training')}
+            onSupportRequestCreated={async () => {
+              await Promise.allSettled([refreshSupportRequests(), refreshDashboard()]);
+            }}
+          />
+        ) : activeTab === 'training' ? (
+          <TrainingPage operatorId={dashboardData?.operator.id || 'OP1001'} />
+        ) : activeTab === 'handover' ? (
+          <HandoverPage
+            machineId={dashboardData?.machine.id || 'EXC001'}
+            operatorId={dashboardData?.operator.id || 'OP1001'}
           />
         ) : null}
       </main>

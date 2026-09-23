@@ -163,3 +163,137 @@ export interface CreateSupportRequestPayload {
   task_id?: string;
   message: string;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 4 Types: Assistant, Training Hub, & Shift Handover
+// ---------------------------------------------------------------------------
+
+export interface ReferenceItem {
+  type: 'task' | 'incident' | 'support_request' | 'training' | string;
+  id: string;
+  label?: string;
+}
+
+export interface ProposedAction {
+  type: string;
+  requires_confirmation: boolean;
+  payload: {
+    request_type: SupportRequestType;
+    task_id?: string;
+    message: string;
+    [key: string]: any;
+  };
+}
+
+export interface AssistantResponse {
+  answer: string;
+  references: ReferenceItem[];
+  proposed_action?: ProposedAction | null;
+}
+
+export interface AssistantMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  references?: ReferenceItem[];
+  proposed_action?: ProposedAction | null;
+  timestamp: string;
+}
+
+export interface QuestionChoice {
+  key: string;
+  text: string;
+}
+
+export interface TrainingQuestionPublic {
+  id: string;
+  module_id: string;
+  question: string;
+  choices: QuestionChoice[];
+}
+
+export interface TrainingModule {
+  id: string;
+  title: string;
+  description: string;
+  category: 'SAFETY' | 'PRODUCTIVITY' | string;
+  estimated_minutes: number;
+  active: boolean;
+  question_count: number;
+  completed: boolean;
+  last_score?: number | null;
+  total_questions?: number | null;
+}
+
+export interface TrainingModuleDetail {
+  module: TrainingModule;
+  questions: TrainingQuestionPublic[];
+}
+
+export interface TrainingRecommendation {
+  module: TrainingModule;
+  reason: string;
+  trigger_event?: string;
+}
+
+export interface TrainingSubmitResponse {
+  module_id: string;
+  score: number;
+  total: number;
+  completed: boolean;
+  feedback?: Array<{
+    question_id: string;
+    submitted: string;
+    correct: boolean;
+    explanation: string;
+  }>;
+}
+
+export interface ShiftHandoverReport {
+  shift: {
+    shift_id: string;
+    name: string;
+    operator_id: string;
+    operator_name?: string;
+    machine_id: string;
+    machine_status: string;
+    engine_hours: number;
+    [key: string]: any;
+  };
+  tasks: {
+    completed: Task[];
+    unfinished: Task[];
+  };
+  delays: Array<{
+    task_id: string;
+    task_type: string;
+    status: string;
+    pause_reason?: string;
+    pause_note?: string;
+    planned_minutes: number;
+    predicted_minutes?: number;
+    variance_minutes?: number;
+    prediction_status?: string;
+  }>;
+  incidents: {
+    unresolved: Incident[];
+    resolved: Incident[];
+  };
+  support_requests: {
+    open: SupportRequest[];
+    resolved: SupportRequest[];
+  };
+  training: {
+    completed: Array<{
+      module_id: string;
+      title: string;
+      score: number;
+      total: number;
+      completed_at: string;
+    }>;
+    recommended: TrainingRecommendation[];
+  };
+  usage_insights: UsageInsight[];
+  summary_text: string;
+}
+
